@@ -1,0 +1,8 @@
+﻿node_modules/
+dist/
+*.log
+
+# Keep only .env.example in version control
+.env
+.env.*
+!.env.example

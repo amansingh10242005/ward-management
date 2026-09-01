@@ -1,0 +1,215 @@
+import React, { useState, useEffect } from 'react';
+import { apiClient } from '../../lib/api';
+import { RoadFeature, ZoneFeature } from '../../types/gis';
+import { parseFeatureId } from '../../utils/featureUtils';
+
+interface RoadsFormProps {
+  feature: RoadFeature | null;
+  mode: 'create' | 'edit' | 'move';
+  onSuccess: (action?: 'create' | 'update' | 'delete', featureId?: string) => void;
+  onCancel: () => void;
+  onMoveStart?: () => void;
+  selectedZoneFeature?: ZoneFeature | null;
+}
+
+const RoadsForm: React.FC<RoadsFormProps> = ({ feature, mode, onSuccess, onCancel, onMoveStart, selectedZoneFeature }) => {
+  const [name, setName] = useState('');
+  const [category, setCategory] = useState('local');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (feature && feature.properties) {
+      setName(feature.properties.name || '');
+      setCategory(feature.properties.type || 'local');
+    } else {
+      setName('');
+      setCategory('local');
+    }
+    setConfirmDelete(false);
+    setError(null);
+  }, [feature]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      const rawZoneId = selectedZoneFeature?.id
+        ? (parseFeatureId(selectedZoneFeature.id) as number)
+        : null;
+
+      const payload = {
+        type: 'Feature',
+        geometry: feature!.geometry,
+        properties: { 
+          name, 
+          type: category,
+          zone_id: feature?.properties?.zone_id || rawZoneId
+        },
+      };
+
+      if (mode === 'edit' && feature!.id) {
+        const rawId = parseFeatureId(feature!.id);
+        await apiClient.roads.update(rawId as string, payload as any);
+        onSuccess('update', feature!.id as string);
+      } else {
+        await apiClient.roads.create(payload as any);
+        onSuccess('create');
+      }
+    } catch (err: any) {
+      console.error('Failed to save road:', err);
+      setError(err.message || 'An unexpected error occurred while saving.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!confirmDelete) {
+      setConfirmDelete(true);
+      return;
+    }
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      if (feature && feature!.id) {
+        const rawId = parseFeatureId(feature!.id);
+        await apiClient.roads.delete(rawId as string);
+        onSuccess('delete', feature!.id as string);
+      }
+    } catch (err: any) {
+      console.error('Failed to delete road:', err);
+      if (err.status === 404) {
+        setError('This feature was already deleted by another user.');
+        setTimeout(() => onSuccess('delete', feature?.id as string), 2000);
+      } else {
+        setError(err.message || 'An unexpected error occurred while deleting.');
+      }
+    } finally {
+      setIsSubmitting(false);
+      setConfirmDelete(false);
+    }
+  };
+
+  const createdDate = feature?.properties?.created_at
+    ? new Date(feature.properties.created_at).toLocaleDateString('en-US', {
+        month: 'short', day: 'numeric', year: 'numeric',
+      })
+    : null;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+      <div className="inspector-edit-label">
+        {mode === 'edit' ? 'Edit Road' : 'New Road'}
+      </div>
+
+      {error && <div className="error-banner">{error}</div>}
+
+      <form
+        onSubmit={handleSubmit}
+        style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}
+      >
+        <div className="form-group">
+          <label className="form-label">Name</label>
+          <input
+            className="form-input"
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+            placeholder="e.g. Main Street"
+            disabled={isSubmitting}
+          />
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">Category</label>
+          <div className="form-select-wrap">
+            <select
+              className="form-select"
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              disabled={isSubmitting}
+            >
+              <option value="local">Local</option>
+              <option value="arterial">Arterial</option>
+              <option value="highway">Highway</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">Zone</label>
+          <input
+            className="form-input"
+            type="text"
+            value={feature?.properties?.zone_id ? `Zone ${feature.properties.zone_id}` : (selectedZoneFeature ? selectedZoneFeature.properties?.name || `Zone ${selectedZoneFeature.id}` : 'Unassigned')}
+            readOnly
+            tabIndex={-1}
+          />
+        </div>
+
+        {createdDate && (
+          <div className="form-group">
+            <label className="form-label">Created Date</label>
+            <input
+              className="form-input"
+              type="text"
+              value={createdDate}
+              readOnly
+              tabIndex={-1}
+            />
+          </div>
+        )}
+
+        <div className="inspector-actions">
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? 'Saving…' : 'Save'}
+          </button>
+
+          {mode === 'edit' && (
+            <>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={onMoveStart}
+                disabled={isSubmitting}
+              >
+                Move
+              </button>
+              <button
+                type="button"
+                className={`btn ${confirmDelete ? 'btn-danger' : 'btn-secondary'}`}
+                onClick={handleDelete}
+                disabled={isSubmitting}
+              >
+                {isSubmitting
+                  ? 'Deleting…'
+                  : confirmDelete
+                    ? 'Confirm Delete'
+                    : 'Delete'}
+              </button>
+            </>
+          )}
+
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={onCancel}
+            disabled={isSubmitting}
+          >
+            Cancel
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+};
+
+export default RoadsForm;
