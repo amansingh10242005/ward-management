@@ -1,25 +1,36 @@
 import { useState, useEffect, useCallback } from 'react';
 import MapContainer from './components/MapContainer';
-import LayerControl from './components/LayerControl';
 import FeatureList from './components/FeatureList';
-import FeatureForm from './components/FeatureForm';
-import MapToolbar from './components/MapToolbar';
+import TechSidebar from './components/TechSidebar';
+import BasemapModal from './components/BasemapModal';
+import CoordinateBar from './components/CoordinateBar';
 import {
-  IconMapPin,
-  IconSun,
-  IconMoon,
   IconLayers,
+  IconMap,
   IconFullscreen,
   IconShare,
   IconCompass,
 } from './components/Icons';
-import { olService } from './lib/openlayers';
+import { olService, BasemapId } from './lib/openlayers';
 import { useMapInteractions } from './hooks/useMapInteractions';
 
 function App() {
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [mapRotation, setMapRotation] = useState(0);
+  const [isBasemapModalOpen, setIsBasemapModalOpen] = useState(false);
+  const [currentBasemap, setCurrentBasemap] = useState<BasemapId>('carto_dark');
+
+  useEffect(() => {
+    return olService.onBasemapChange((id) => {
+      setCurrentBasemap(id);
+    });
+  }, []);
+
+  const handleSelectBasemap = (id: BasemapId) => {
+    olService.setBasemap(id);
+    setCurrentBasemap(id);
+  };
 
   const {
     mode,
@@ -130,37 +141,6 @@ function App() {
 
   return (
     <div className="app-layout">
-      {/* ── HEADER ─────────────────────────────────────────────────────── */}
-      <header className="app-header">
-        {/* Brand */}
-        <div className="header-brand">
-          <div className="header-brand-icon">
-            <IconMapPin />
-          </div>
-          <div className="header-brand-text">
-            <h1>Ward Infrastructure Manager</h1>
-            <div className="header-subtitle">Infrastructure &amp; Asset Management</div>
-          </div>
-        </div>
-
-        {/* Empty space for grid layout */}
-        <div />
-
-        {/* Actions */}
-        <div className="header-actions">
-          {/* Dark / Light toggle */}
-          <button
-            className="theme-toggle"
-            onClick={toggleTheme}
-            title={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
-            aria-label="Toggle theme"
-          >
-            {isDarkMode ? <IconSun /> : <IconMoon />}
-          </button>
-
-        </div>
-      </header>
-
       {/* ── BODY ────────────────────────────────────────────────────────── */}
       <div className="app-body">
         {uiError && (
@@ -170,54 +150,54 @@ function App() {
           </div>
         )}
         {/* ── SIDEBAR ─────────────────────────────────────────────────── */}
-        <aside className="sidebar" style={{ marginLeft: isSidebarOpen ? '0px' : '-288px' }}>
-          {/* Layers section */}
-          <div className="sidebar-section" style={{ flex: '0 1 auto', minHeight: 0, maxHeight: '45%', display: 'flex', flexDirection: 'column' }}>
-            <div className="sidebar-header">Layers</div>
-            <div className="sidebar-content" style={{ overflowY: 'auto' }}>
-              <LayerControl activeLayer={activeLayer} setActiveLayer={setActiveLayer} />
-            </div>
-          </div>
-
-          {/* Feature Inspector section */}
-          <div className="sidebar-section" style={{ flex: activeLayer ? '0 1 auto' : '1 1 auto', minHeight: 0, maxHeight: activeLayer ? '45%' : 'none', display: 'flex', flexDirection: 'column' }}>
-            <div className="sidebar-content feature-inspector" style={{ overflowY: 'auto', paddingTop: 'var(--space-4)' }}>
-              <FeatureForm
-                feature={selectedFeature}
-                mode={mode}
-                activeLayer={activeLayer}
-                onSuccess={handleFormSuccess}
-                onCancel={cancelAction}
-                onMoveStart={handleMoveStart}
-                selectedZoneFeature={selectedZoneFeature}
-                selectedRoadFeature={selectedRoadFeature}
-              />
-            </div>
-          </div>
+        <aside className="sidebar hud-sidebar" style={{ marginLeft: isSidebarOpen ? '0px' : 'calc(-1 * var(--sidebar-width, 270px))' }}>
+          <TechSidebar
+            activeLayer={activeLayer}
+            setActiveLayer={setActiveLayer}
+            selectedFeature={selectedFeature}
+            mode={mode}
+            onDrawPoint={handleDrawPoint}
+            onDrawLine={handleDrawLine}
+            onDrawPolygon={handleDrawPolygon}
+            onMoveStart={handleMoveStart}
+            onSuccess={handleFormSuccess}
+            onCancel={cancelAction}
+            selectedZoneFeature={selectedZoneFeature}
+            selectedRoadFeature={selectedRoadFeature}
+            isDarkMode={isDarkMode}
+            toggleTheme={toggleTheme}
+          />
         </aside>
 
         {/* ── MAP AREA ─────────────────────────────────────────────────── */}
         <main className="map-wrapper">
-          {/* Drawing toolbar — bottom-left, vertical */}
-          <MapToolbar
-            mode={mode}
-            activeLayer={activeLayer}
-            onDrawPoint={handleDrawPoint}
-            onDrawLine={handleDrawLine}
-            onDrawPolygon={handleDrawPolygon}
+          {/* Basemap selector popover */}
+          <BasemapModal
+            isOpen={isBasemapModalOpen}
+            onClose={() => setIsBasemapModalOpen(false)}
+            currentBasemap={currentBasemap}
+            onSelectBasemap={handleSelectBasemap}
           />
 
           {/* Map controls cluster — top-right */}
           <div className="map-controls-cluster">
-            {/* Group 1: view controls */}
+            {/* Group 1: view controls & basemap selector */}
             <div className="map-control-group">
               <button
                 className="map-ctrl-btn"
                 onClick={handleToggleSidebar}
-                title="Toggle layers"
-                aria-label="Toggle layers"
+                title="Toggle sidebar"
+                aria-label="Toggle sidebar"
               >
                 <IconLayers />
+              </button>
+              <button
+                className={`map-ctrl-btn ${isBasemapModalOpen ? 'active' : ''}`}
+                onClick={() => setIsBasemapModalOpen((prev) => !prev)}
+                title="Base Maps & Terrain"
+                aria-label="Base Maps & Terrain"
+              >
+                <IconMap />
               </button>
               <button
                 className="map-ctrl-btn"
@@ -272,11 +252,20 @@ function App() {
             </div>
           </div>
 
+          <CoordinateBar />
+
           <MapContainer />
         </main>
 
         {/* ── RIGHT SIDEBAR ─────────────────────────────────────────────────── */}
-        <aside className="sidebar right-sidebar" style={{ marginRight: isRightSidebarOpen ? '0px' : '-288px' }}>
+        <aside
+          className={`sidebar right-sidebar ${isRightSidebarOpen ? 'open' : 'closed'}`}
+          style={{
+            marginRight: isRightSidebarOpen ? '0px' : 'calc(-1 * var(--sidebar-width, 310px) - 20px)',
+            borderLeft: isRightSidebarOpen ? '1px solid var(--border-light)' : 'none',
+            visibility: isRightSidebarOpen ? 'visible' : 'hidden',
+          }}
+        >
           {activeLayer && (
             <div className="sidebar-section" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
               <div className="sidebar-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

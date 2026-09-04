@@ -183,3 +183,124 @@ export const IconZoomOut = (props: React.SVGProps<SVGSVGElement>) => (
     <line x1="8" x2="14" y1="11" y2="11" />
   </SVG>
 );
+
+// ── HUD Specific Icons ─────────────────────────────────────────────────────
+
+export const IconGrip = (props: React.SVGProps<SVGSVGElement>) => (
+  <SVG width="16" height="16" viewBox="0 0 16 16" {...props}>
+    <circle cx="5" cy="4" r="1.25" fill="currentColor" stroke="none" />
+    <circle cx="11" cy="4" r="1.25" fill="currentColor" stroke="none" />
+    <circle cx="5" cy="8" r="1.25" fill="currentColor" stroke="none" />
+    <circle cx="11" cy="8" r="1.25" fill="currentColor" stroke="none" />
+    <circle cx="5" cy="12" r="1.25" fill="currentColor" stroke="none" />
+    <circle cx="11" cy="12" r="1.25" fill="currentColor" stroke="none" />
+  </SVG>
+);
+
+export const IconChevronLeft = (props: React.SVGProps<SVGSVGElement>) => (
+  <SVG {...props}>
+    <path d="m15 18-6-6 6-6" />
+  </SVG>
+);
+
+export const IconChevronsLeft = (props: React.SVGProps<SVGSVGElement>) => (
+  <SVG {...props}>
+    <path d="m11 17-5-5 5-5" />
+    <path d="m18 17-5-5 5-5" />
+  </SVG>
+);
+
+export const IconVertexEdit = (props: React.SVGProps<SVGSVGElement>) => (
+  <SVG {...props}>
+    <path d="M4 14l5-6 6 8 5-6" />
+    <circle cx="4" cy="14" r="1.5" fill="currentColor" />
+    <circle cx="9" cy="8" r="1.5" fill="currentColor" />
+    <circle cx="15" cy="16" r="1.5" fill="currentColor" />
+    <circle cx="20" cy="10" r="1.5" fill="currentColor" />
+  </SVG>
+);
+
+export const IconEdit = (props: React.SVGProps<SVGSVGElement>) => (
+  <SVG {...props}>
+    <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+  </SVG>
+);
+
+export const IconMove = (props: React.SVGProps<SVGSVGElement>) => (
+  <SVG {...props}>
+    <polyline points="5 9 2 12 5 15" />
+    <polyline points="9 5 12 2 15 5" />
+    <polyline points="15 19 12 22 9 19" />
+    <polyline points="19 9 22 12 19 15" />
+    <line x1="2" y1="12" x2="22" y2="12" />
+    <line x1="12" y1="2" x2="12" y2="22" />
+  </SVG>
+);
+
+export const IconTrash = (props: React.SVGProps<SVGSVGElement>) => (
+  <SVG {...props}>
+    <path d="M3 6h18" />
+    <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+    <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+    <line x1="10" y1="11" x2="10" y2="17" />
+    <line x1="14" y1="11" x2="14" y2="17" />
+  </SVG>
+);
+
+export const IconCirclePlus = (props: React.SVGProps<SVGSVGElement>) => (
+  <SVG {...props}>
+    <circle cx="12" cy="12" r="10" />
+    <line x1="12" y1="8" x2="12" y2="16" />
+    <line x1="8" y1="12" x2="16" y2="12" />
+  </SVG>
+);
+
+export const IconNetwork = (props: React.SVGProps<SVGSVGElement>) => (
+  <SVG {...props}>
+    <rect x="16" y="16" width="6" height="6" rx="1" />
+    <rect x="2" y="16" width="6" height="6" rx="1" />
+    <rect x="9" y="2" width="6" height="6" rx="1" />
+    <path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3" />
+    <line x1="12" y1="12" x2="12" y2="8" />
+  </SVG>
+);
+
+export const IconSquare = (props: React.SVGProps<SVGSVGElement>) => (
+  <SVG {...props}>
+    <rect width="18" height="18" x="3" y="3" rx="2" />
+  </SVG>
+);
+
+export const IconHexagon = (props: React.SVGProps<SVGSVGElement>) => (
+  <SVG {...props}>
+    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+  </SVG>
+);
+
+export const IconRing = (props: React.SVGProps<SVGSVGElement>) => (
+  <SVG {...props}>
+    <circle cx="12" cy="12" r="8" strokeWidth="2.5" />
+  </SVG>
+);
+
+export const IconMap = (props: React.SVGProps<SVGSVGElement>) => (
+  <SVG {...props}>
+    <polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21" />
+    <line x1="9" x2="9" y1="3" y2="18" />
+    <line x1="15" x2="15" y1="6" y2="21" />
+  </SVG>
+);
+
+export const IconCheck = (props: React.SVGProps<SVGSVGElement>) => (
+  <SVG {...props}>
+    <polyline points="20 6 9 17 4 12" />
+  </SVG>
+);
+
+export const IconCoordinateTarget = (props: React.SVGProps<SVGSVGElement>) => (
+  <SVG {...props}>
+    <circle cx="12" cy="12" r="10" />
+    <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
+  </SVG>
+);
+

@@ -15,8 +15,18 @@ import View from 'ol/View';
 import TileLayer from 'ol/layer/Tile';
 import TileWMS from 'ol/source/TileWMS';
 import OSM from 'ol/source/OSM';
+import XYZ from 'ol/source/XYZ';
 import VectorLayer from 'ol/layer/Vector';
 import VectorSource from 'ol/source/Vector';
+
+export type BasemapId =
+  | 'arcgis_satellite'
+  | 'sentinel_satellite'
+  | 'osm'
+  | 'carto_dark'
+  | 'arcgis_topo'
+  | 'carto_voyager'
+  | 'none';
 import Draw from 'ol/interaction/Draw';
 import GeoJSON from 'ol/format/GeoJSON';
 import { Interaction } from 'ol/interaction';
@@ -38,9 +48,9 @@ const WORKSPACE = import.meta.env.VITE_GEOSERVER_WORKSPACE;
 
 // ── Color palette (matches CSS tokens) ─────────────────────────────────────
 const COLORS = {
-  streetlight: '#f59e0b',
-  road:        '#3b82f6',
-  zone:        '#22c55e',
+  streetlight: '#F5B84B',
+  road:        '#19B5E6',
+  zone:        '#38BDF8',
 };
 
 
@@ -65,23 +75,23 @@ function makeZoneSelectedStyle(): Style[] {
   return [
     // Outer glow layer (wide, semi-transparent)
     new Style({
-      fill:   new Fill({ color: 'rgba(34,197,94,0.08)' }),
+      fill:   new Fill({ color: 'rgba(56,189,248,0.12)' }),
       stroke: new Stroke({
-        color: 'rgba(34,197,94,0.35)',
+        color: 'rgba(56,189,248,0.35)',
         width: 14,
       }),
     }),
     // Mid glow
     new Style({
       stroke: new Stroke({
-        color: 'rgba(34,197,94,0.55)',
+        color: 'rgba(56,189,248,0.60)',
         width: 6,
       }),
     }),
     // Bright inner stroke
     new Style({
       stroke: new Stroke({
-        color: '#22c55e',
+        color: '#38BDF8',
         width: 2.5,
       }),
     }),
@@ -93,19 +103,19 @@ function makeRoadSelectedStyle(): Style[] {
   return [
     new Style({
       stroke: new Stroke({
-        color: 'rgba(59,130,246,0.30)',
+        color: 'rgba(25,181,230,0.30)',
         width: 14,
       }),
     }),
     new Style({
       stroke: new Stroke({
-        color: 'rgba(59,130,246,0.60)',
+        color: 'rgba(25,181,230,0.60)',
         width: 6,
       }),
     }),
     new Style({
       stroke: new Stroke({
-        color: '#3b82f6',
+        color: '#19B5E6',
         width: 2.5,
       }),
     }),
@@ -119,8 +129,8 @@ function makeStreetlightSelectedStyle(): Style[] {
     new Style({
       image: new CircleStyle({
         radius: 16,
-        fill:   new Fill({ color: 'rgba(245,158,11,0.15)' }),
-        stroke: new Stroke({ color: 'rgba(245,158,11,0.40)', width: 6 }),
+        fill:   new Fill({ color: 'rgba(245,184,75,0.15)' }),
+        stroke: new Stroke({ color: 'rgba(245,184,75,0.40)', width: 6 }),
       }),
     }),
     // Bright inner circle
@@ -327,6 +337,91 @@ export class OpenLayersService {
   private rotationListeners: ((rotation: number) => void)[] = [];
   private moveEndListeners: (() => void)[] = [];
 
+  private basemapLayer: TileLayer<any> | null = null;
+  private currentBasemap: BasemapId = 'carto_dark';
+  private basemapChangeListeners: ((id: BasemapId) => void)[] = [];
+
+  private createBasemapSource(id: BasemapId) {
+    switch (id) {
+      case 'arcgis_satellite':
+        return new XYZ({
+          url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+          maxZoom: 19,
+          crossOrigin: 'anonymous',
+        });
+      case 'sentinel_satellite':
+        return new XYZ({
+          url: 'https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2020_3857/default/g/{z}/{y}/{x}.jpg',
+          maxZoom: 18,
+          crossOrigin: 'anonymous',
+        });
+      case 'osm':
+        return new OSM({
+          crossOrigin: 'anonymous',
+        });
+      case 'carto_dark':
+        // High-contrast dark basemap using OSM with custom hue-matched dark filter (no watermarks / no API key)
+        return new OSM({
+          crossOrigin: 'anonymous',
+        });
+      case 'arcgis_topo':
+        return new XYZ({
+          url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
+          maxZoom: 19,
+          crossOrigin: 'anonymous',
+        });
+      case 'carto_voyager':
+        // Detailed street basemap using Esri World Street Map (no watermarks / no API key)
+        return new XYZ({
+          url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+          maxZoom: 19,
+          crossOrigin: 'anonymous',
+        });
+      case 'none':
+      default:
+        return null;
+    }
+  }
+
+  setBasemap(id: BasemapId) {
+    this.currentBasemap = id;
+    if (!this.map || !this.basemapLayer) return;
+
+    if (id === 'none') {
+      this.basemapLayer.setVisible(false);
+    } else {
+      const source = this.createBasemapSource(id);
+      if (source) {
+        const newLayer = new TileLayer({
+          source,
+          className: id === 'carto_dark' ? 'dark-osm-basemap' : '',
+          zIndex: 0,
+        });
+        const layers = this.map.getLayers();
+        const idx = layers.getArray().indexOf(this.basemapLayer);
+        if (idx !== -1) {
+          layers.setAt(idx, newLayer);
+        } else {
+          layers.insertAt(0, newLayer);
+        }
+        this.basemapLayer = newLayer;
+      }
+    }
+    this.basemapChangeListeners.forEach((l) => l(id));
+  }
+
+  getBasemap(): BasemapId {
+    return this.currentBasemap;
+  }
+
+  onBasemapChange(listener: (id: BasemapId) => void) {
+    this.basemapChangeListeners.push(listener);
+    listener(this.currentBasemap);
+    return () => {
+      this.basemapChangeListeners = this.basemapChangeListeners.filter((l) => l !== listener);
+    };
+  }
+
   onRotationChange(listener: (rotation: number) => void) {
     this.rotationListeners.push(listener);
     if (this.map) listener(this.map.getView().getRotation());
@@ -388,17 +483,19 @@ export class OpenLayersService {
       }),
     };
 
-    // Dark basemap via CSS filter on OSM
-    const darkBasemap = new TileLayer({
-      source: new OSM(),
-      className: 'dark-osm-basemap'
+    // Initialize basemap layer
+    const initialSource = this.createBasemapSource(this.currentBasemap);
+    this.basemapLayer = new TileLayer({
+      source: initialSource || undefined,
+      className: this.currentBasemap === 'carto_dark' ? 'dark-osm-basemap' : '',
+      zIndex: 0,
     });
 
     this.map = new Map({
       target,
       controls: [], // Remove default OL controls (we use custom ones in React)
       layers: [
-        darkBasemap,
+        this.basemapLayer,
         this.layers.states,
         this.layers.districts,
         this.layers.zones,
@@ -479,10 +576,6 @@ export class OpenLayersService {
   async searchFeaturesFromBackend(layerName: string, search: string = ''): Promise<any[]> {
     if (!this.map) return [];
     
-    const extent = this.map.getView().calculateExtent(this.map.getSize());
-    const isValidExtent = extent.every(v => isFinite(v) && !isNaN(v));
-    const bboxStr = isValidExtent ? extent.join(',') + ',EPSG:3857' : '';
-
     let cqlFilter = '';
     if (search.trim()) {
       const searchStr = search.replace(/'/g, "''");
