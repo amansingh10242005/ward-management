@@ -13,11 +13,10 @@ interface StreetlightsFormProps {
   selectedRoadFeature?: RoadFeature | null;
 }
 
-const StreetlightsForm: React.FC<StreetlightsFormProps> = ({ feature, mode, onSuccess, onCancel, onMoveStart, selectedZoneFeature, selectedRoadFeature }) => {
+const StreetlightsForm: React.FC<StreetlightsFormProps> = ({ feature, mode, onSuccess, selectedZoneFeature, selectedRoadFeature }) => {
   const [name, setName] = useState('');
   const [type, setType] = useState('standard');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -28,7 +27,6 @@ const StreetlightsForm: React.FC<StreetlightsFormProps> = ({ feature, mode, onSu
       setName('');
       setType('standard');
     }
-    setConfirmDelete(false);
     setError(null);
   }, [feature]);
 
@@ -72,32 +70,6 @@ const StreetlightsForm: React.FC<StreetlightsFormProps> = ({ feature, mode, onSu
     }
   };
 
-  const handleDelete = async () => {
-    if (!confirmDelete) {
-      setConfirmDelete(true);
-      return;
-    }
-    setIsSubmitting(true);
-    setError(null);
-    try {
-      if (feature && feature!.id) {
-        const rawId = parseFeatureId(feature!.id);
-        await apiClient.streetlights.delete(rawId as string);
-        onSuccess('delete', feature!.id as string);
-      }
-    } catch (err: any) {
-      console.error('Failed to delete streetlight:', err);
-      if (err.status === 404) {
-        setError('This feature was already deleted by another user.');
-        setTimeout(() => onSuccess('delete', feature?.id as string), 2000);
-      } else {
-        setError(err.message || 'An unexpected error occurred while deleting.');
-      }
-    } finally {
-      setIsSubmitting(false);
-      setConfirmDelete(false);
-    }
-  };
 
   const createdDate = feature?.properties?.created_at
     ? new Date(feature.properties.created_at).toLocaleDateString('en-US', {
@@ -188,40 +160,6 @@ const StreetlightsForm: React.FC<StreetlightsFormProps> = ({ feature, mode, onSu
             disabled={isSubmitting}
           >
             {isSubmitting ? 'Saving…' : 'Save'}
-          </button>
-
-          {mode === 'edit' && (
-            <>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={onMoveStart}
-                disabled={isSubmitting}
-              >
-                Move
-              </button>
-              <button
-                type="button"
-                className={`btn ${confirmDelete ? 'btn-danger' : 'btn-secondary'}`}
-                onClick={handleDelete}
-                disabled={isSubmitting}
-              >
-                {isSubmitting
-                  ? 'Deleting…'
-                  : confirmDelete
-                    ? 'Confirm Delete'
-                    : 'Delete'}
-              </button>
-            </>
-          )}
-
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={onCancel}
-            disabled={isSubmitting}
-          >
-            Cancel
           </button>
         </div>
       </form>

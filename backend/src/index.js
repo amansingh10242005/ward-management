@@ -19,6 +19,8 @@ import cors from 'cors';
 import { streetlightsRouter } from './routes/streetlights.routes.js';
 import { roadsRouter } from './routes/roads.routes.js';
 import { zonesRouter } from './routes/zones.routes.js';
+import { districtsRouter } from './routes/districts.routes.js';
+import { statesRouter } from './routes/states.routes.js';
 import { errorHandler } from './middleware/error-handler.middleware.js';
 
 const app = express();
@@ -26,7 +28,7 @@ const PORT = process.env.PORT ?? 3001;
 
 // ─── Global middleware ────────────────────────────────────────────────────────
 app.use(cors({ origin: process.env.CORS_ORIGIN ?? 'http://localhost:5173' }));
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
 
 // ─── Health check ─────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => {
@@ -40,6 +42,8 @@ app.get('/health', (_req, res) => {
 app.use('/api/streetlights', streetlightsRouter);
 app.use('/api/roads', roadsRouter);
 app.use('/api/zones', zonesRouter);
+app.use('/api/districts', districtsRouter);
+app.use('/api/states', statesRouter);
 
 // ─── Centralized error handler (must be registered last) ─────────────────────
 app.use(errorHandler);

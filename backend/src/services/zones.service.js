@@ -66,12 +66,24 @@ export const zonesService = {
       throw new GeometryValidationError('Invalid zone geometry', 'area too small');
     }
 
+    let name = feature.properties?.name;
+    let type = feature.properties?.type;
+
+    if (!name) {
+      const existing = await pool.query('SELECT name, type FROM zones WHERE id = $1', [id]);
+      if (existing.rows.length === 0) {
+        throw new NotFoundError('Zone not found');
+      }
+      name = existing.rows[0].name;
+      if (!type) type = existing.rows[0].type;
+    }
+
     const { rows } = await pool.query(`
       UPDATE zones 
       SET name = $1, type = $2, geom = ST_SetSRID(ST_GeomFromGeoJSON($3), 4326), updated_at = NOW()
       WHERE id = $4
       RETURNING id, name, type, created_at, updated_at, ST_AsGeoJSON(geom) AS geom
-    `, [feature.properties.name, feature.properties.type, geoJsonStr, id]);
+    `, [name, type, geoJsonStr, id]);
     
     if (rows.length === 0) {
       throw new NotFoundError('Zone not found');

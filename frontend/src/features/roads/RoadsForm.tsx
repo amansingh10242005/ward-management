@@ -12,11 +12,10 @@ interface RoadsFormProps {
   selectedZoneFeature?: ZoneFeature | null;
 }
 
-const RoadsForm: React.FC<RoadsFormProps> = ({ feature, mode, onSuccess, onCancel, onMoveStart, selectedZoneFeature }) => {
+const RoadsForm: React.FC<RoadsFormProps> = ({ feature, mode, onSuccess, selectedZoneFeature }) => {
   const [name, setName] = useState('');
   const [category, setCategory] = useState('local');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -27,7 +26,6 @@ const RoadsForm: React.FC<RoadsFormProps> = ({ feature, mode, onSuccess, onCance
       setName('');
       setCategory('local');
     }
-    setConfirmDelete(false);
     setError(null);
   }, [feature]);
 
@@ -66,32 +64,6 @@ const RoadsForm: React.FC<RoadsFormProps> = ({ feature, mode, onSuccess, onCance
     }
   };
 
-  const handleDelete = async () => {
-    if (!confirmDelete) {
-      setConfirmDelete(true);
-      return;
-    }
-    setIsSubmitting(true);
-    setError(null);
-    try {
-      if (feature && feature!.id) {
-        const rawId = parseFeatureId(feature!.id);
-        await apiClient.roads.delete(rawId as string);
-        onSuccess('delete', feature!.id as string);
-      }
-    } catch (err: any) {
-      console.error('Failed to delete road:', err);
-      if (err.status === 404) {
-        setError('This feature was already deleted by another user.');
-        setTimeout(() => onSuccess('delete', feature?.id as string), 2000);
-      } else {
-        setError(err.message || 'An unexpected error occurred while deleting.');
-      }
-    } finally {
-      setIsSubmitting(false);
-      setConfirmDelete(false);
-    }
-  };
 
   const createdDate = feature?.properties?.created_at
     ? new Date(feature.properties.created_at).toLocaleDateString('en-US', {
@@ -171,40 +143,6 @@ const RoadsForm: React.FC<RoadsFormProps> = ({ feature, mode, onSuccess, onCance
             disabled={isSubmitting}
           >
             {isSubmitting ? 'Saving…' : 'Save'}
-          </button>
-
-          {mode === 'edit' && (
-            <>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={onMoveStart}
-                disabled={isSubmitting}
-              >
-                Move
-              </button>
-              <button
-                type="button"
-                className={`btn ${confirmDelete ? 'btn-danger' : 'btn-secondary'}`}
-                onClick={handleDelete}
-                disabled={isSubmitting}
-              >
-                {isSubmitting
-                  ? 'Deleting…'
-                  : confirmDelete
-                    ? 'Confirm Delete'
-                    : 'Delete'}
-              </button>
-            </>
-          )}
-
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={onCancel}
-            disabled={isSubmitting}
-          >
-            Cancel
           </button>
         </div>
       </form>

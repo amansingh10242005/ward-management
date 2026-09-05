@@ -20,6 +20,9 @@ echo.
 echo Running relationship and constraints migrations...
 %PSQL% -f "db\migrations\005_add_hierarchy_relationships.sql"
 %PSQL% -f "db\migrations\006_enforce_state_district_pks.sql"
+%PSQL% -f "db\migrations\007_add_spatial_indexes_states_districts.sql"
+%PSQL% -f "db\migrations\008_repair_administrative_geometries.sql"
+%PSQL% -f "db\migrations\009_add_state_district_id_sequences.sql"
 
 echo.
 echo Database setup is completely automated and finished!

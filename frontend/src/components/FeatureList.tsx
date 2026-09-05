@@ -13,15 +13,24 @@ export default function FeatureList({ activeLayer, selectedFeature, onSelectFeat
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const selectedRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const fetchFeatures = async () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     setLoading(true);
     try {
-      const f = await olService.searchFeaturesFromBackend(activeLayer, search);
+      const f = await olService.searchFeaturesFromBackend(activeLayer, search, controller.signal);
       setFeatures(f);
-    } catch (e) {
-      console.error(e);
-      setFeatures([]);
+    } catch (e: any) {
+      if (e?.name !== 'AbortError') {
+        console.error(e);
+        setFeatures([]);
+      }
     } finally {
       setLoading(false);
     }
@@ -31,17 +40,19 @@ export default function FeatureList({ activeLayer, selectedFeature, onSelectFeat
   useEffect(() => {
     const timeout = setTimeout(() => {
       fetchFeatures();
-    }, 300);
+    }, 250);
     return () => clearTimeout(timeout);
   }, [activeLayer, search]);
 
-  // Fetch when map moves
+  // Refresh when layer is modified (create/update/delete)
   useEffect(() => {
-    const cleanup = olService.onMoveEnd(() => {
-      fetchFeatures();
+    const cleanup = olService.onLayerRefresh((refreshedLayer) => {
+      if (refreshedLayer === activeLayer) {
+        fetchFeatures();
+      }
     });
     return cleanup;
-  }, [activeLayer, search]);
+  }, [activeLayer, fetchFeatures]);
 
   useEffect(() => {
     if (selectedFeature && selectedRef.current) {
@@ -52,11 +63,11 @@ export default function FeatureList({ activeLayer, selectedFeature, onSelectFeat
   const getFeatureDisplay = (f: any) => {
     const props = f.properties || {};
     switch (activeLayer) {
-      case 'states': return { primary: props.STATE || props.state_name || `State ${f.id}`, secondary: props.state_code ? `Code: ${props.state_code}` : `ID: ${f.id}` };
-      case 'districts': return { primary: props.District || props.district_name || `District ${f.id}`, secondary: props.State ? `State: ${props.State}` : `ID: ${f.id}` };
-      case 'zones': return { primary: props.name || `Zone ${f.id}`, secondary: `ID: ${f.id}` };
-      case 'roads': return { primary: props.name || `Road ${f.id}`, secondary: `Zone ID: ${props.zone_id || 'N/A'}` };
-      case 'streetlights': return { primary: props.identifier || props.name || `Streetlight ${f.id}`, secondary: `Road ID: ${props.road_id || 'N/A'}` };
+      case 'states': return { primary: props.state || props.STATE || props.state_name || `State ${f.id}`, secondary: props.state_lgd ? `LGD: ${props.state_lgd}` : (props.state_code ? `Code: ${props.state_code}` : `ID: ${f.id}`) };
+      case 'districts': return { primary: props.district || props.District || props.district_name || `District ${f.id}`, secondary: (props.state || props.State) ? `State: ${props.state || props.State}` : `ID: ${f.id}` };
+      case 'zones': return { primary: props.name || `Zone ${f.id}`, secondary: props.type ? `Type: ${props.type}` : `ID: ${f.id}` };
+      case 'roads': return { primary: props.name || `Road ${f.id}`, secondary: props.zone_id ? `Zone ID: ${props.zone_id}` : `ID: ${f.id}` };
+      case 'streetlights': return { primary: props.name || props.identifier || `Streetlight ${f.id}`, secondary: props.road_id ? `Road ID: ${props.road_id}` : `ID: ${f.id}` };
       default: return { primary: `Feature ${f.id}`, secondary: '' };
     }
   };

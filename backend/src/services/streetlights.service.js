@@ -75,8 +75,21 @@ export const streetlightsService = {
 
   async update(id, feature) {
     const geoJsonStr = JSON.stringify(feature.geometry);
-    const zoneId = feature.properties.zone_id;
-    const roadId = feature.properties.road_id;
+    let zoneId = feature.properties?.zone_id;
+    let roadId = feature.properties?.road_id;
+    let name = feature.properties?.name;
+    let type = feature.properties?.type;
+
+    if (!zoneId || !roadId || !name) {
+      const existing = await pool.query('SELECT name, type, zone_id, road_id FROM streetlights WHERE id = $1', [id]);
+      if (existing.rows.length === 0) {
+        throw new NotFoundError('Streetlight not found');
+      }
+      if (!zoneId) zoneId = existing.rows[0].zone_id;
+      if (!roadId) roadId = existing.rows[0].road_id;
+      if (!name) name = existing.rows[0].name;
+      if (!type) type = existing.rows[0].type;
+    }
 
     if (!zoneId || !roadId) {
       throw new GeometryValidationError('Missing relationships', 'Streetlight requires both zone_id and road_id');

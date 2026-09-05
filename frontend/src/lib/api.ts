@@ -113,4 +113,38 @@ export const apiClient = {
       return handleResponse<void>(res);
     },
   },
+
+  districts: {
+    update: async (id: number | string, feature: any): Promise<any> => {
+      const res = await fetch(`${API_BASE}/districts/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(feature),
+      });
+      return handleResponse<any>(res);
+    },
+    delete: async (id: number | string): Promise<void> => {
+      const res = await fetch(`${API_BASE}/districts/${id}`, {
+        method: 'DELETE',
+      });
+      return handleResponse<void>(res);
+    },
+  },
+
+  states: {
+    update: async (id: number | string, feature: any): Promise<any> => {
+      const res = await fetch(`${API_BASE}/states/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(feature),
+      });
+      return handleResponse<any>(res);
+    },
+    delete: async (id: number | string): Promise<void> => {
+      const res = await fetch(`${API_BASE}/states/${id}`, {
+        method: 'DELETE',
+      });
+      return handleResponse<void>(res);
+    },
+  },
 };

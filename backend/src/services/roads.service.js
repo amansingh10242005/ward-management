@@ -62,7 +62,19 @@ export const roadsService = {
 
   async update(id, feature) {
     const geoJsonStr = JSON.stringify(feature.geometry);
-    const zoneId = feature.properties.zone_id;
+    let zoneId = feature.properties?.zone_id;
+    let name = feature.properties?.name;
+    let type = feature.properties?.type;
+
+    if (!zoneId || !name) {
+      const existing = await pool.query('SELECT name, category as type, zone_id FROM roads WHERE id = $1', [id]);
+      if (existing.rows.length === 0) {
+        throw new NotFoundError('Road not found');
+      }
+      if (!zoneId) zoneId = existing.rows[0].zone_id;
+      if (!name) name = existing.rows[0].name;
+      if (!type) type = existing.rows[0].type;
+    }
 
     if (!zoneId) {
       throw new GeometryValidationError('Missing zone_id', 'Roads must belong to a Zone');

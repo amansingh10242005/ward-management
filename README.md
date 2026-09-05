@@ -82,13 +82,15 @@ ward-management/
 
 ## Layers
 
-| Layer        | Geometry   | PostGIS Table  | GeoServer Layer     |
-|--------------|------------|----------------|---------------------|
-| Streetlights | Point      | streetlights   | ward:streetlights   |
-| Roads        | LineString | roads          | ward:roads          |
-| Zones        | Polygon    | zones          | ward:zones          |
+| Layer        | Geometry     | PostGIS Table | GeoServer Layer   | Spatial Index (GiST) |
+|--------------|--------------|---------------|-------------------|----------------------|
+| States       | MultiPolygon | states        | ward:states       | idx_states_geom      |
+| Districts    | MultiPolygon | districts     | ward:districts    | idx_districts_geom   |
+| Zones        | Polygon      | zones         | ward:zones        | zones_geom_idx       |
+| Roads        | LineString   | roads         | ward:roads        | roads_geom_idx       |
+| Streetlights | Point        | streetlights  | ward:streetlights | streetlights_geom_idx|
 
-All tables use **SRID 4326** (WGS 84). Spatial indexes are GIST.
+All tables persist geometries in **SRID 4326** (WGS 84). All spatial queries use GiST indexes.
 
 ---
 
@@ -98,7 +100,38 @@ All tables use **SRID 4326** (WGS 84). Spatial indexes are GIST.
 - Node.js >= 20
 - PostgreSQL 15+ with PostGIS 3
 - GeoServer 2.25+ (configured with Jetty CORS enabled)
+- Python 3.10+ with `geopandas`, `sqlalchemy`, `shapely`, `psycopg2` (for GIS data import)
 - See [docs/geoserver-setup.md](./docs/geoserver-setup.md) for the mandatory setup checklist.
+
+### Database Setup & Migrations
+Run all migrations in order (001 through 009):
+```bash
+cd backend
+npm run migrate
+```
+Or via Windows batch script:
+```cmd
+run_migrations.bat
+```
+
+To run the automated PostGIS and schema integrity check:
+```bash
+cd backend
+node verify_phase2.js
+```
+
+### Administrative GIS Data Import
+Import Indian State and District boundary shapefiles safely (non-destructive, transactional, auto-repairing):
+```bash
+# Append mode (safe default: only inserts missing records without table drops)
+python import_geopandas.py --mode append
+
+# Replace mode (safely truncates records in a transaction while preserving PKs, constraints & GiST indexes)
+python import_geopandas.py --mode replace
+
+# Dry run mode (validates CRS, geometry, and attributes without writing to database)
+python import_geopandas.py --dry-run
+```
 
 ### Backend
 ```bash
@@ -115,18 +148,6 @@ cp .env.example .env.development
 npm install
 npm run dev
 ```
-
-### Database
-```bash
-psql -U postgres -d ward_db -f db/migrations/001_enable_postgis.sql
-psql -U postgres -d ward_db -f db/migrations/002_create_streetlights.sql
-psql -U postgres -d ward_db -f db/migrations/003_create_roads.sql
-psql -U postgres -d ward_db -f db/migrations/004_create_zones.sql
-psql -U postgres -d ward_db -f db/seeds/seed_sample_data.sql
-```
-
-> [!NOTE]
-> The `seed_sample_data.sql` script loads sample infrastructure data centered around **Chennai, India**. When you boot up the frontend map, it will automatically focus on this region.
 
 ---
 
@@ -161,6 +182,12 @@ psql -U postgres -d ward_db -f db/seeds/seed_sample_data.sql
 
 | Method | Path                    | Description            |
 |--------|-------------------------|------------------------|
+| GET    | /api/states             | List all states        |
+| PUT    | /api/states/:id         | Update a state         |
+| DELETE | /api/states/:id         | Delete a state         |
+| GET    | /api/districts          | List all districts     |
+| PUT    | /api/districts/:id      | Update a district      |
+| DELETE | /api/districts/:id      | Delete a district      |
 | GET    | /api/streetlights       | List all streetlights  |
 | POST   | /api/streetlights       | Create a streetlight   |
 | PUT    | /api/streetlights/:id   | Update a streetlight   |

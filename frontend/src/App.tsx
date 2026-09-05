@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
 import MapContainer from './components/MapContainer';
-import FeatureList from './components/FeatureList';
 import TechSidebar from './components/TechSidebar';
 import BasemapModal from './components/BasemapModal';
 import CoordinateBar from './components/CoordinateBar';
@@ -48,12 +47,14 @@ function App() {
     handleFormSuccess,
     handleMoveStart,
     handleSelectFeature,
+    startVertexEdit,
+    finishVertexEdit,
+    cancelVertexEdit,
+    isSavingVertex,
+    vertexEditError,
+    currentVertexGeometry,
   } = useMapInteractions();
 
-  const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(false);
-  useEffect(() => {
-    setIsRightSidebarOpen(!!activeLayer);
-  }, [activeLayer]);
 
   useEffect(() => {
     return olService.onRotationChange(setMapRotation);
@@ -155,6 +156,7 @@ function App() {
             activeLayer={activeLayer}
             setActiveLayer={setActiveLayer}
             selectedFeature={selectedFeature}
+            onSelectFeature={handleSelectFeature}
             mode={mode}
             onDrawPoint={handleDrawPoint}
             onDrawLine={handleDrawLine}
@@ -166,6 +168,13 @@ function App() {
             selectedRoadFeature={selectedRoadFeature}
             isDarkMode={isDarkMode}
             toggleTheme={toggleTheme}
+            onStartVertexEdit={startVertexEdit}
+            onFinishVertexEdit={finishVertexEdit}
+            onCancelVertexEdit={cancelVertexEdit}
+            isSavingVertex={isSavingVertex}
+            vertexEditError={vertexEditError}
+            currentVertexGeometry={currentVertexGeometry}
+            onError={setUiError}
           />
         </aside>
 
@@ -257,37 +266,7 @@ function App() {
           <MapContainer />
         </main>
 
-        {/* ── RIGHT SIDEBAR ─────────────────────────────────────────────────── */}
-        <aside
-          className={`sidebar right-sidebar ${isRightSidebarOpen ? 'open' : 'closed'}`}
-          style={{
-            marginRight: isRightSidebarOpen ? '0px' : 'calc(-1 * var(--sidebar-width, 310px) - 20px)',
-            borderLeft: isRightSidebarOpen ? '1px solid var(--border-light)' : 'none',
-            visibility: isRightSidebarOpen ? 'visible' : 'hidden',
-          }}
-        >
-          {activeLayer && (
-            <div className="sidebar-section" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-              <div className="sidebar-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span>Features</span>
-                <button 
-                  onClick={() => setActiveLayer(null)} 
-                  style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '16px', padding: '0 4px', lineHeight: 1 }}
-                  title="Close feature list"
-                >
-                  &times;
-                </button>
-              </div>
-              <div className="sidebar-content" style={{ padding: 0, flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
-                <FeatureList 
-                  activeLayer={activeLayer} 
-                  selectedFeature={selectedFeature}
-                  onSelectFeature={handleSelectFeature} 
-                />
-              </div>
-            </div>
-          )}
-        </aside>
+
       </div>
     </div>
   );

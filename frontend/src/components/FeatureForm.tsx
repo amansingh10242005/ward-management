@@ -2,11 +2,13 @@ import React from 'react';
 import StreetlightsForm from '../features/streetlights/StreetlightsForm';
 import RoadsForm from '../features/roads/RoadsForm';
 import ZonesForm from '../features/zones/ZonesForm';
+import DistrictsForm from '../features/districts/DistrictsForm';
+import StatesForm from '../features/states/StatesForm';
 import { IconMapPin } from './Icons';
 
 interface FeatureFormProps {
   feature: any | null;
-  mode: 'idle' | 'create' | 'edit' | 'move';
+  mode: 'idle' | 'create' | 'edit' | 'move' | 'vertex_edit';
   activeLayer: 'streetlights' | 'roads' | 'zones' | 'states' | 'districts' | null;
   onSuccess: (action?: 'create' | 'update' | 'delete', featureId?: string) => void;
   onCancel: () => void;
@@ -15,7 +17,16 @@ interface FeatureFormProps {
   selectedRoadFeature?: any;
 }
 
-const FeatureForm: React.FC<FeatureFormProps> = ({ feature, mode, activeLayer, onSuccess, onCancel, onMoveStart, selectedZoneFeature, selectedRoadFeature }) => {
+const FeatureForm: React.FC<FeatureFormProps> = ({
+  feature,
+  mode,
+  activeLayer,
+  onSuccess,
+  onCancel,
+  onMoveStart,
+  selectedZoneFeature,
+  selectedRoadFeature,
+}) => {
   if (mode === 'idle' || !activeLayer) {
     return (
       <div className="inspector-empty">
@@ -43,50 +54,61 @@ const FeatureForm: React.FC<FeatureFormProps> = ({ feature, mode, activeLayer, o
     );
   }
 
+  const formMode = mode === 'vertex_edit' ? 'edit' : mode;
+
   switch (activeLayer) {
     case 'streetlights':
-      return <StreetlightsForm feature={feature} mode={mode} onSuccess={onSuccess} onCancel={onCancel} onMoveStart={onMoveStart} selectedZoneFeature={selectedZoneFeature} selectedRoadFeature={selectedRoadFeature} />;
+      return (
+        <StreetlightsForm
+          feature={feature}
+          mode={formMode}
+          onSuccess={onSuccess}
+          onCancel={onCancel}
+          onMoveStart={onMoveStart}
+          selectedZoneFeature={selectedZoneFeature}
+          selectedRoadFeature={selectedRoadFeature}
+        />
+      );
     case 'roads':
-      return <RoadsForm feature={feature} mode={mode} onSuccess={onSuccess} onCancel={onCancel} onMoveStart={onMoveStart} selectedZoneFeature={selectedZoneFeature} />;
+      return (
+        <RoadsForm
+          feature={feature}
+          mode={formMode}
+          onSuccess={onSuccess}
+          onCancel={onCancel}
+          onMoveStart={onMoveStart}
+          selectedZoneFeature={selectedZoneFeature}
+        />
+      );
     case 'zones':
-      return <ZonesForm feature={feature} mode={mode} onSuccess={onSuccess} onCancel={onCancel} onMoveStart={onMoveStart} />;
+      return (
+        <ZonesForm
+          feature={feature}
+          mode={formMode}
+          onSuccess={onSuccess}
+          onCancel={onCancel}
+          onMoveStart={onMoveStart}
+        />
+      );
     case 'states':
       return (
-        <div className="inspector-content">
-          <div className="inspector-header">
-            <h3>State Boundary</h3>
-            <div className="inspector-id">ID: {feature?.id}</div>
-          </div>
-          <div className="inspector-body">
-            <div className="form-group">
-              <label>State Name</label>
-              <div className="readonly-val">{feature?.properties?.STATE || feature?.properties?.state_name || 'N/A'}</div>
-            </div>
-            <div className="form-group">
-              <label>State Code</label>
-              <div className="readonly-val">{feature?.properties?.state_code || 'N/A'}</div>
-            </div>
-          </div>
-        </div>
+        <StatesForm
+          feature={feature}
+          mode={formMode}
+          onSuccess={onSuccess}
+          onCancel={onCancel}
+          onMoveStart={onMoveStart}
+        />
       );
     case 'districts':
       return (
-        <div className="inspector-content">
-          <div className="inspector-header">
-            <h3>District Boundary</h3>
-            <div className="inspector-id">ID: {feature?.id}</div>
-          </div>
-          <div className="inspector-body">
-            <div className="form-group">
-              <label>District Name</label>
-              <div className="readonly-val">{feature?.properties?.District || feature?.properties?.district_name || 'N/A'}</div>
-            </div>
-            <div className="form-group">
-              <label>State</label>
-              <div className="readonly-val">{feature?.properties?.State || 'N/A'}</div>
-            </div>
-          </div>
-        </div>
+        <DistrictsForm
+          feature={feature}
+          mode={formMode}
+          onSuccess={onSuccess}
+          onCancel={onCancel}
+          onMoveStart={onMoveStart}
+        />
       );
     default:
       return null;

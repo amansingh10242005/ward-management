@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { olService } from '../lib/openlayers';
 import { apiClient } from '../lib/api';
 import { parseFeatureId } from '../utils/featureUtils';
+import { validateGeometry } from '../utils/geometryValidation';
 
-type Mode = 'idle' | 'create' | 'edit' | 'move';
+export type Mode = 'idle' | 'create' | 'edit' | 'move' | 'vertex_edit';
 export type ActiveLayer = 'streetlights' | 'roads' | 'zones' | 'states' | 'districts' | null;
 
 export function useMapInteractions() {
@@ -13,6 +14,11 @@ export function useMapInteractions() {
   const [selectedZoneFeature, setSelectedZoneFeature] = useState<any | null>(null);
   const [selectedRoadFeature, setSelectedRoadFeature] = useState<any | null>(null);
   const [uiError, setUiError] = useState<string | null>(null);
+
+  // Vertex Edit State
+  const [isSavingVertex, setIsSavingVertex] = useState(false);
+  const [vertexEditError, setVertexEditError] = useState<string | null>(null);
+  const [currentVertexGeometry, setCurrentVertexGeometry] = useState<any | null>(null);
 
   // Auto-dismiss error toaster after 5 seconds
   useEffect(() => {
@@ -25,7 +31,11 @@ export function useMapInteractions() {
   const handleSetActiveLayer = useCallback((layer: ActiveLayer) => {
     setActiveLayer(layer);
     if (!layer) {
-      olService.cancelInteraction();
+      if (mode === 'vertex_edit') {
+        olService.cancelVertexEdit();
+      } else {
+        olService.cancelInteraction();
+      }
       setSelectedFeature(null);
       olService.setSelectedFeature(null, null);
       setMode('idle');
@@ -40,12 +50,16 @@ export function useMapInteractions() {
         if (featureId.startsWith('districts')) currentLayer = 'districts';
         
         if (currentLayer !== layer) shouldCancel = true;
-      } else if (mode === 'create') {
+      } else if (mode === 'create' || mode === 'vertex_edit') {
         shouldCancel = true;
       }
 
       if (shouldCancel) {
-        olService.cancelInteraction();
+        if (mode === 'vertex_edit') {
+          olService.cancelVertexEdit();
+        } else {
+          olService.cancelInteraction();
+        }
         setSelectedFeature(null);
         olService.setSelectedFeature(null, null);
         setMode('idle');
@@ -54,76 +68,88 @@ export function useMapInteractions() {
   }, [selectedFeature, mode]);
 
   const handleSelectFeatureList = useCallback((feature: any) => {
+    if (mode === 'vertex_edit') {
+      olService.cancelVertexEdit();
+    }
     setUiError(null);
     setSelectedFeature(feature);
     setMode('edit');
     if (activeLayer) {
-      olService.setSelectedFeature(activeLayer, feature.id);
-      olService.centerOnFeature(activeLayer, feature.id);
+      olService.setSelectedFeature(activeLayer, feature.id, feature);
+      olService.centerOnFeature(activeLayer, feature.id, feature);
     }
-  }, [activeLayer]);
+  }, [activeLayer, mode]);
 
-  // Activate modify/select when idle or editing
-  useEffect(() => {
-    if (mode === 'idle' || mode === 'edit') {
-      olService.activateModify(
-        (feature, layerName) => {
-          setUiError(null);
-          if (feature) {
-            const geojsonFeature = typeof feature === 'string' ? JSON.parse(feature) : feature;
-            setSelectedFeature(geojsonFeature);
-            setActiveLayer(layerName as ActiveLayer);
-            setMode('edit');
-            olService.setSelectedFeature(layerName, geojsonFeature.id);
+  const selectedZoneRef = useRef<any>(selectedZoneFeature);
+  selectedZoneRef.current = selectedZoneFeature;
 
-            // Infer hierarchy state
-            if (layerName === 'zones') {
-              setSelectedZoneFeature(geojsonFeature);
-              setSelectedRoadFeature(null);
-            } else if (layerName === 'roads') {
-              setSelectedRoadFeature(geojsonFeature);
-              if (!selectedZoneFeature || selectedZoneFeature.id !== geojsonFeature.properties?.zone_id) {
-                const zoneId = geojsonFeature.properties?.zone_id;
-                const zoneProps = olService.getFeatureProperties('zones', zoneId);
-                setSelectedZoneFeature({ id: zoneId, properties: { name: zoneProps?.name || `Zone ${zoneId}` } });
-              }
-            } else if (layerName === 'streetlights') {
-              const roadId = geojsonFeature.properties?.road_id;
-              const zoneId = geojsonFeature.properties?.zone_id;
-              if (!selectedRoadFeature || selectedRoadFeature.id !== roadId) {
-                const roadProps = olService.getFeatureProperties('roads', roadId);
-                setSelectedRoadFeature({ id: roadId, properties: { name: roadProps?.name || `Road ${roadId}` } });
-              }
-              if (!selectedZoneFeature || selectedZoneFeature.id !== zoneId) {
-                const zoneProps = olService.getFeatureProperties('zones', zoneId);
-                setSelectedZoneFeature({ id: zoneId, properties: { name: zoneProps?.name || `Zone ${zoneId}` } });
-              }
-            }
-          } else {
-            // Keep hierarchy intact so user can draw
-            setSelectedFeature(null);
-            setActiveLayer(null);
-            setMode('idle');
-            olService.setSelectedFeature(null, null);
-          }
-        },
-        (feature) => {
-          if (feature) {
-            const geojsonFeature = typeof feature === 'string' ? JSON.parse(feature) : feature;
-            setSelectedFeature(geojsonFeature);
-          }
+  const selectedRoadRef = useRef<any>(selectedRoadFeature);
+  selectedRoadRef.current = selectedRoadFeature;
+
+  const onSelectFeatureCallback = useCallback((feature: any, layerName: string) => {
+    setUiError(null);
+    if (feature) {
+      const geojsonFeature = typeof feature === 'string' ? JSON.parse(feature) : feature;
+      setSelectedFeature(geojsonFeature);
+      setActiveLayer(layerName as ActiveLayer);
+      setMode('edit');
+      olService.setSelectedFeature(layerName, geojsonFeature.id);
+
+      // Infer hierarchy state
+      if (layerName === 'zones') {
+        setSelectedZoneFeature(geojsonFeature);
+        setSelectedRoadFeature(null);
+      } else if (layerName === 'roads') {
+        setSelectedRoadFeature(geojsonFeature);
+        if (!selectedZoneRef.current || selectedZoneRef.current.id !== geojsonFeature.properties?.zone_id) {
+          const zoneId = geojsonFeature.properties?.zone_id;
+          const zoneProps = olService.getFeatureProperties('zones', zoneId);
+          setSelectedZoneFeature({ id: zoneId, properties: { name: zoneProps?.name || `Zone ${zoneId}` } });
         }
-      );
+      } else if (layerName === 'streetlights') {
+        const roadId = geojsonFeature.properties?.road_id;
+        const zoneId = geojsonFeature.properties?.zone_id;
+        if (!selectedRoadRef.current || selectedRoadRef.current.id !== roadId) {
+          const roadProps = olService.getFeatureProperties('roads', roadId);
+          setSelectedRoadFeature({ id: roadId, properties: { name: roadProps?.name || `Road ${roadId}` } });
+        }
+        if (!selectedZoneRef.current || selectedZoneRef.current.id !== zoneId) {
+          const zoneProps = olService.getFeatureProperties('zones', zoneId);
+          setSelectedZoneFeature({ id: zoneId, properties: { name: zoneProps?.name || `Zone ${zoneId}` } });
+        }
+      }
+    } else {
+      setSelectedFeature(null);
+      setActiveLayer(null);
+      setMode('idle');
+      olService.setSelectedFeature(null, null);
     }
-  }, [mode, activeLayer, selectedZoneFeature, selectedRoadFeature]);
+  }, []);
+
+  const onSelectRef = useRef(onSelectFeatureCallback);
+  onSelectRef.current = onSelectFeatureCallback;
+
+  // Activate select when idle or normal inspecting/editing; stable interaction across hierarchy changes
+  const isSelectMode = mode === 'idle' || mode === 'edit';
+  useEffect(() => {
+    if (isSelectMode) {
+      olService.activateSelect((feature, layerName) => {
+        onSelectRef.current(feature, layerName);
+      });
+    }
+  }, [isSelectMode]);
 
   const cancelAction = useCallback(() => {
-    olService.cancelInteraction();
+    if (mode === 'vertex_edit') {
+      olService.cancelVertexEdit();
+    } else {
+      olService.cancelInteraction();
+    }
     olService.setSelectedFeature(null, null);
     setSelectedFeature(null);
     setActiveLayer(null);
     setMode('idle');
-  }, []);
+  }, [mode]);
 
   const startDrawingStreetlight = useCallback(() => {
     if (!selectedRoadFeature) {
@@ -188,36 +214,149 @@ export function useMapInteractions() {
   }, [activeLayer]);
 
   const handleMoveStart = useCallback(() => {
+    if (!activeLayer) return;
     setMode('move');
-    olService.activateTranslate(async (translatedFeature) => {
-      // Upon translate end, we automatically update the backend
-      try {
-        const rawId = parseFeatureId(translatedFeature.id);
-        const payload = {
-          type: 'Feature',
-          geometry: translatedFeature.geometry,
-          properties: translatedFeature.properties,
-        };
-        
-        if (activeLayer === 'streetlights') {
-          await apiClient.streetlights.update(rawId as string, payload as any);
-        } else if (activeLayer === 'roads') {
-          await apiClient.roads.update(rawId as string, payload as any);
-        } else if (activeLayer === 'zones') {
-          await apiClient.zones.update(rawId as string, payload as any);
+    const fid = selectedFeature ? selectedFeature.id : null;
+    olService.activateTranslate(
+      activeLayer,
+      async (translatedFeature, rollback) => {
+        try {
+          const rawId = parseFeatureId(translatedFeature.id);
+          const payload = {
+            type: 'Feature',
+            geometry: translatedFeature.geometry,
+            properties: translatedFeature.properties,
+          };
+          
+          if (activeLayer === 'streetlights') {
+            await apiClient.streetlights.update(rawId as string, payload as any);
+          } else if (activeLayer === 'roads') {
+            await apiClient.roads.update(rawId as string, payload as any);
+          } else if (activeLayer === 'zones') {
+            await apiClient.zones.update(rawId as string, payload as any);
+          } else if (activeLayer === 'states') {
+            await apiClient.states.update(rawId as string, payload as any);
+          } else if (activeLayer === 'districts') {
+            await apiClient.districts.update(rawId as string, payload as any);
+          }
+          
+          // Refresh and switch back to normal feature state
+          olService.refreshLayer(activeLayer);
+          setSelectedFeature(translatedFeature);
+          setMode('edit');
+        } catch (err: any) {
+          console.error('Failed to move feature:', err);
+          rollback();
+          setUiError(err.message || 'An unexpected error occurred while moving the feature.');
+          setMode('edit');
         }
-        
-        // Refresh and switch back to edit mode
-        olService.refreshLayer(activeLayer!);
-        setSelectedFeature(translatedFeature);
-        setMode('edit');
-      } catch (err: any) {
-        console.error('Failed to move feature:', err);
-        setUiError(err.message || 'An unexpected error occurred while moving the feature.');
-        setMode('edit'); // Revert back to edit mode if it failed
+      },
+      fid
+    );
+  }, [activeLayer, selectedFeature]);
+
+  // ── Dedicated Vertex Editing Handlers ───────────────────────────────────────
+
+  const startVertexEdit = useCallback(() => {
+    if (!selectedFeature || !activeLayer) return;
+    setUiError(null);
+    setVertexEditError(null);
+    setIsSavingVertex(false);
+    setCurrentVertexGeometry(selectedFeature.geometry);
+
+    const ok = olService.activateVertexEdit(
+      activeLayer,
+      selectedFeature.id,
+      selectedFeature,
+      (currentGeomGeoJson) => {
+        // Real-time local geometry update as vertices are moved
+        setCurrentVertexGeometry(currentGeomGeoJson);
+      },
+      () => {
+        // Cancelled via Escape key or internal trigger
+        setMode('idle');
+        setVertexEditError(null);
+        setCurrentVertexGeometry(null);
       }
-    });
-  }, [activeLayer]);
+    );
+
+    if (ok) {
+      setMode('vertex_edit');
+    } else {
+      setUiError('Could not initialize vertex editing for this feature.');
+    }
+  }, [selectedFeature, activeLayer]);
+
+  const finishVertexEdit = useCallback(async () => {
+    if (!selectedFeature || !activeLayer) return;
+    setIsSavingVertex(true);
+    setVertexEditError(null);
+
+    try {
+      const finalGeom =
+        olService.getVertexEditCurrentGeometry() ||
+        currentVertexGeometry ||
+        selectedFeature.geometry;
+
+      if (!finalGeom) {
+        throw new Error('No geometry available to save.');
+      }
+
+      // Pre-save client validation
+      const validation = validateGeometry(finalGeom, activeLayer);
+      if (!validation.valid) {
+        throw new Error(validation.error);
+      }
+
+      const rawId = parseFeatureId(selectedFeature.id);
+      const payload = {
+        type: 'Feature',
+        geometry: finalGeom,
+        properties: selectedFeature.properties || {},
+      };
+
+      let updatedFeature: any = null;
+      if (activeLayer === 'streetlights') {
+        updatedFeature = await apiClient.streetlights.update(rawId as string, payload as any);
+      } else if (activeLayer === 'roads') {
+        updatedFeature = await apiClient.roads.update(rawId as string, payload as any);
+      } else if (activeLayer === 'zones') {
+        updatedFeature = await apiClient.zones.update(rawId as string, payload as any);
+      } else if (activeLayer === 'states') {
+        updatedFeature = await apiClient.states.update(rawId as string, payload as any);
+      } else if (activeLayer === 'districts') {
+        updatedFeature = await apiClient.districts.update(rawId as string, payload as any);
+      }
+
+      // Finish OpenLayers editing session in-place; keep vector features intact
+      olService.finishVertexEdit();
+      // Refresh layer deterministically so GeoServer and vector sources render the new saved shape
+      olService.refreshLayer(activeLayer);
+
+      if (updatedFeature) {
+        setSelectedFeature(updatedFeature);
+      } else {
+        setSelectedFeature((prev: any) => ({ ...prev, geometry: finalGeom }));
+      }
+
+      setMode('idle');
+      setCurrentVertexGeometry(null);
+    } catch (err: any) {
+      console.error('Failed to finish vertex edit:', err);
+      setVertexEditError(err.message || 'An unexpected error occurred while saving.');
+      // User stays in vertex_edit mode so edits are not lost
+    } finally {
+      setIsSavingVertex(false);
+    }
+  }, [selectedFeature, activeLayer, currentVertexGeometry]);
+
+  const cancelVertexEdit = useCallback(() => {
+    olService.cancelVertexEdit();
+    setMode('idle');
+    setVertexEditError(null);
+    setCurrentVertexGeometry(null);
+    setIsSavingVertex(false);
+  }, []);
 
   return {
     mode,
@@ -235,5 +374,13 @@ export function useMapInteractions() {
     handleFormSuccess,
     handleMoveStart,
     handleSelectFeature: handleSelectFeatureList,
+
+    // Vertex Edit exports
+    startVertexEdit,
+    finishVertexEdit,
+    cancelVertexEdit,
+    isSavingVertex,
+    vertexEditError,
+    currentVertexGeometry,
   };
 }
