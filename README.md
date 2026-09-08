@@ -38,6 +38,18 @@ separate and must never be blurred. GeoServer owns display; the Express API owns
   • After a successful write the frontend invalidates / refreshes the relevant
     OpenLayers WMS source so the map reflects the persisted change.
 
+### Why WMS + WFS
+
+**WMS (Web Map Service)**:
+- Enables highly efficient map visualization.
+- Renders tiled images server-side, making it suitable for large boundary datasets (States, Districts) and heavy features.
+- Greatly reduces frontend memory footprint.
+
+**WFS (Web Feature Service)**:
+- Used exclusively for feature interaction, selection, and editing workflows.
+- Strictly bounded by OpenLayers BBOX strategies and property projection (limiting attribute payload) to prevent massive full-table downloads.
+- GeoServer provides WFS, but the **Express/PostGIS** layer provides the controlled write path to ensure strict data validation and geometry persistence.
+
 ### Sequence Flow (Create Feature)
 
 ```mermaid
