@@ -104,11 +104,19 @@ def process_states_gdf(shp_path):
 
     lgd_col = next((c for c in gdf.columns if 'lgd' in c.lower()), None)
 
+    KNOWN_TYPOS = {
+        'CHHAtTISGARH': 'CHHATTISGARH'
+    }
+
     clean_records = []
     for idx, row in gdf.iterrows():
         state_name = str(row[state_col]).strip() if pd.notna(row[state_col]) else None
         if not state_name:
             continue
+            
+        if state_name in KNOWN_TYPOS:
+            print(f"    Normalized: {state_name} -> {KNOWN_TYPOS[state_name]}")
+            state_name = KNOWN_TYPOS[state_name]
 
         state_lgd = None
         if lgd_col and pd.notna(row[lgd_col]):
@@ -166,12 +174,21 @@ def process_districts_gdf(shp_path):
 
     lgd_col = next((c for c in gdf.columns if 'district_l' in c.lower() or 'dist_lgd' in c.lower() or 'lgd' in c.lower()), None)
 
+    KNOWN_TYPOS = {
+        'DISPUTED (RAJATHAN & GUJARAT)': 'DISPUTED (RAJASTHAN & GUJARAT)',
+        'DISPUTED (WEST BENGAL , BIHAR & JHARKHAND)': 'DISPUTED (WEST BENGAL, BIHAR & JHARKHAND)'
+    }
+
     clean_records = []
     for idx, row in gdf.iterrows():
         district_name = str(row[dist_col]).strip() if pd.notna(row[dist_col]) else None
         state_name = str(row[state_col]).strip() if pd.notna(row[state_col]) else None
         if not district_name or not state_name:
             continue
+            
+        if state_name in KNOWN_TYPOS:
+            print(f"    Normalized: {state_name} -> {KNOWN_TYPOS[state_name]}")
+            state_name = KNOWN_TYPOS[state_name]
 
         district_lgd = str(row[lgd_col]).strip() if (lgd_col and pd.notna(row[lgd_col])) else None
 

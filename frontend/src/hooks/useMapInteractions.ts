@@ -67,16 +67,58 @@ export function useMapInteractions() {
     }
   }, [selectedFeature, mode]);
 
-  const handleSelectFeatureList = useCallback((feature: any) => {
+  const handleSelectFeatureList = useCallback(async (feature: any) => {
     if (mode === 'vertex_edit') {
       olService.cancelVertexEdit();
     }
     setUiError(null);
     setSelectedFeature(feature);
     setMode('edit');
+
     if (activeLayer) {
+      // Infer hierarchy state for list selection matching map selection
+      if (activeLayer === 'zones') {
+        setSelectedZoneFeature(feature);
+        setSelectedRoadFeature(null);
+      } else if (activeLayer === 'roads') {
+        setSelectedRoadFeature(feature);
+        const zoneId = feature.properties?.zone_id;
+        if (zoneId != null) {
+          const zoneProps = olService.getFeatureProperties('zones', zoneId);
+          setSelectedZoneFeature({ id: zoneId, properties: { name: zoneProps?.name || `Zone ${zoneId}` } });
+        }
+      } else if (activeLayer === 'streetlights') {
+        const roadId = feature.properties?.road_id;
+        const zoneId = feature.properties?.zone_id;
+        if (roadId != null) {
+          const roadProps = olService.getFeatureProperties('roads', roadId);
+          setSelectedRoadFeature({ id: roadId, properties: { name: roadProps?.name || `Road ${roadId}` } });
+        }
+        if (zoneId != null) {
+          const zoneProps = olService.getFeatureProperties('zones', zoneId);
+          setSelectedZoneFeature({ id: zoneId, properties: { name: zoneProps?.name || `Zone ${zoneId}` } });
+        }
+      }
+
       olService.setSelectedFeature(activeLayer, feature.id, feature);
-      olService.centerOnFeature(activeLayer, feature.id, feature);
+      try {
+        const resolved = await olService.centerOnFeature(activeLayer, feature.id, feature);
+        if (resolved && resolved.geometry) {
+          setSelectedFeature((prev: any) => {
+            if (!prev || String(prev.id) === String(feature.id)) {
+              return {
+                ...prev,
+                ...resolved,
+                geometry: resolved.geometry,
+                properties: { ...(prev?.properties || {}), ...(resolved.properties || {}) },
+              };
+            }
+            return prev;
+          });
+        }
+      } catch (err) {
+        console.warn('centerOnFeature error:', err);
+      }
     }
   }, [activeLayer, mode]);
 
@@ -358,6 +400,19 @@ export function useMapInteractions() {
     setIsSavingVertex(false);
   }, []);
 
+  const zoomToFeature = useCallback(() => {
+    if (selectedFeature && activeLayer) {
+      olService.centerOnFeature(activeLayer, selectedFeature.id, selectedFeature);
+    }
+  }, [selectedFeature, activeLayer]);
+
+  const zoomToLayer = useCallback((layerName?: string) => {
+    const target = layerName || activeLayer;
+    if (target) {
+      olService.zoomToLayer(target);
+    }
+  }, [activeLayer]);
+
   return {
     mode,
     activeLayer,
@@ -374,6 +429,10 @@ export function useMapInteractions() {
     handleFormSuccess,
     handleMoveStart,
     handleSelectFeature: handleSelectFeatureList,
+
+    // Spatial Navigation exports
+    zoomToFeature,
+    zoomToLayer,
 
     // Vertex Edit exports
     startVertexEdit,

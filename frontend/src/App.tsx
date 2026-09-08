@@ -47,6 +47,8 @@ function App() {
     handleFormSuccess,
     handleMoveStart,
     handleSelectFeature,
+    zoomToFeature,
+    zoomToLayer,
     startVertexEdit,
     finishVertexEdit,
     cancelVertexEdit,
@@ -168,6 +170,8 @@ function App() {
             selectedRoadFeature={selectedRoadFeature}
             isDarkMode={isDarkMode}
             toggleTheme={toggleTheme}
+            onZoomToFeature={zoomToFeature}
+            onZoomToLayer={zoomToLayer}
             onStartVertexEdit={startVertexEdit}
             onFinishVertexEdit={finishVertexEdit}
             onCancelVertexEdit={cancelVertexEdit}

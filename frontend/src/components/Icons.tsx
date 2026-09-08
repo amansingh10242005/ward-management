@@ -304,3 +304,16 @@ export const IconCoordinateTarget = (props: React.SVGProps<SVGSVGElement>) => (
   </SVG>
 );
 
+export const IconFocus = (props: React.SVGProps<SVGSVGElement>) => (
+  <SVG {...props}>
+    <circle cx="12" cy="12" r="3" />
+    <path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2" />
+  </SVG>
+);
+
+export const IconZoomLayer = (props: React.SVGProps<SVGSVGElement>) => (
+  <SVG {...props}>
+    <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+  </SVG>
+);
+

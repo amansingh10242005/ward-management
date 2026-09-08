@@ -147,4 +147,12 @@ export const apiClient = {
       return handleResponse<void>(res);
     },
   },
+
+  spatial: {
+    getExtent: async (layerName: string): Promise<[number, number, number, number] | null> => {
+      const res = await fetch(`${API_BASE}/spatial/extent/${layerName}`);
+      const data = await handleResponse<{ extent: [number, number, number, number] | null }>(res);
+      return data.extent;
+    },
+  },
 };

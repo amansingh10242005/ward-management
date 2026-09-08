@@ -17,6 +17,8 @@ import {
   IconMapPin,
   IconSun,
   IconMoon,
+  IconFocus,
+  IconZoomLayer,
 } from "./Icons";
 import { getFeatureTelemetry, calculateGeometryMetric } from "../utils/geoMetrics";
 import FeatureForm from "./FeatureForm";
@@ -42,6 +44,10 @@ interface TechSidebarProps {
   selectedRoadFeature?: any;
   isDarkMode?: boolean;
   toggleTheme?: () => void;
+
+  // Spatial Navigation Props
+  onZoomToFeature?: () => void;
+  onZoomToLayer?: (layerName: string) => void;
 
   // Vertex Edit Props
   onStartVertexEdit?: () => void;
@@ -69,6 +75,8 @@ export default function TechSidebar({
   selectedRoadFeature,
   isDarkMode,
   toggleTheme,
+  onZoomToFeature,
+  onZoomToLayer,
   onStartVertexEdit,
   onFinishVertexEdit,
   onCancelVertexEdit,
@@ -334,7 +342,21 @@ export default function TechSidebar({
 
             <div className="hud-card-header">
               <span className="hud-card-badge-label">ACTIVE FEATURE</span>
-              <span className="hud-fid-pill">{telemetry?.fid}</span>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                {onZoomToFeature && (
+                  <button
+                    type="button"
+                    className="hud-nav-btn"
+                    onClick={onZoomToFeature}
+                    title="Zoom to feature"
+                    aria-label="Zoom to feature"
+                    style={{ width: "22px", height: "22px" }}
+                  >
+                    <IconFocus width={13} height={13} />
+                  </button>
+                )}
+                <span className="hud-fid-pill">{telemetry?.fid}</span>
+              </div>
             </div>
 
             <div className="hud-feature-title" title={telemetry?.title}>
@@ -427,8 +449,20 @@ export default function TechSidebar({
                 </button>
                 <span className="hud-drilldown-title">{headerTitle}</span>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                 <span className="hud-geom-badge">{headerBadge}</span>
+                {onZoomToLayer && (
+                  <button
+                    type="button"
+                    className="hud-eye-btn"
+                    onClick={() => onZoomToLayer(activeLayer!)}
+                    title={`Zoom to ${headerTitle} extent`}
+                    aria-label={`Zoom to ${headerTitle} extent`}
+                    style={{ width: "26px", height: "26px" }}
+                  >
+                    <IconZoomLayer width={14} height={14} />
+                  </button>
+                )}
                 <button
                   type="button"
                   className={`hud-eye-btn ${!layers[activeLayer!] ? "hidden" : ""}`}

@@ -49,6 +49,7 @@ import LineString from 'ol/geom/LineString';
 import Polygon from 'ol/geom/Polygon';
 import { altKeyOnly, singleClick } from 'ol/events/condition';
 import { parseFeatureId } from '../utils/featureUtils';
+import { apiClient } from './api';
 
 const GEOSERVER_URL = import.meta.env.VITE_GEOSERVER_BASE_URL;
 const WORKSPACE = import.meta.env.VITE_GEOSERVER_WORKSPACE;
@@ -944,9 +945,20 @@ export class OpenLayersService {
     }
   }
 
-  async centerOnFeature(layerName: string, featureId: string | number, fallbackGeoJson?: any) {
-    if (!this.map) return;
+  getWfsSource(layerName: string): VectorSource | null {
+    if (layerName === 'zones') return this.zonesWfsSource;
+    if (layerName === 'roads') return this.roadsWfsSource;
+    if (layerName === 'streetlights') return this.streetlightsWfsSource;
+    if (layerName === 'states') return this.statesWfsSource;
+    if (layerName === 'districts') return this.districtsWfsSource;
+    return null;
+  }
+
+  async centerOnFeature(layerName: string, featureId: string | number, fallbackGeoJson?: any): Promise<any> {
+    if (!this.map) return fallbackGeoJson || null;
     let feature = this.getWfsFeature(layerName, featureId);
+    let resolvedGeoJson = fallbackGeoJson;
+
     if ((!feature || !feature.getGeometry()) && fallbackGeoJson && fallbackGeoJson.geometry) {
       feature = this.addOrUpdateWfsFeatureFromGeoJson(layerName, featureId, fallbackGeoJson);
     }
@@ -964,6 +976,7 @@ export class OpenLayersService {
         if (res.ok) {
           const data = await res.json();
           if (data.features && data.features.length > 0) {
+            resolvedGeoJson = data.features[0];
             feature = this.addOrUpdateWfsFeatureFromGeoJson(layerName, featureId, data.features[0]);
             this.refreshWfsLayerStyles();
           }
@@ -989,7 +1002,18 @@ export class OpenLayersService {
             duration: 600,
           });
         }
-        return;
+
+        if (!resolvedGeoJson || !resolvedGeoJson.geometry) {
+          try {
+            resolvedGeoJson = new GeoJSON().writeFeatureObject(feature, {
+              featureProjection: 'EPSG:3857',
+              dataProjection: 'EPSG:4326',
+            });
+          } catch {
+            // ignore
+          }
+        }
+        return resolvedGeoJson;
       }
     }
 
@@ -1028,6 +1052,66 @@ export class OpenLayersService {
       } catch (err) {
         console.warn('Failed to parse geometry for centerOnFeature fallback:', err);
       }
+    }
+
+    return resolvedGeoJson;
+  }
+
+  // Pre-cached spatial bounds (EPSG:3857) to ensure instant zero-latency navigation without large WFS downloads
+  private layerExtentsCache: Record<string, [number, number, number, number]> = {
+    states: [7579624, 750000, 10842500, 4260000],       // All India
+    districts: [8482000, 896000, 8950000, 1528000],      // Tamil Nadu Region
+    zones: [8911000, 1442000, 8928000, 1459000],          // Tambaram Ward Zones
+    roads: [8913000, 1445000, 8925000, 1457000],          // Ward Road Network
+    streetlights: [8913000, 1445000, 8925000, 1457000],   // Streetlight Assets
+  };
+
+  /**
+   * Safely navigate to the layer's full extent without downloading the entire dataset.
+   * Priority: Loaded vector features -> Cached layer bounds -> GeoServer WMS capabilities BoundingBox
+   */
+  async zoomToLayer(layerName: string) {
+    if (!this.map) return;
+
+    // 1. If WFS vector source has loaded features, check if their extent is valid
+    const wfsSource = this.getWfsSource(layerName);
+    if (wfsSource) {
+      const features = wfsSource.getFeatures();
+      if (features.length > 0) {
+        const extent = wfsSource.getExtent();
+        if (extent && !extent.some(isNaN) && isFinite(extent[0]) && isFinite(extent[1])) {
+          this.map.getView().fit(extent, {
+            padding: [50, 50, 50, 50],
+            duration: 600,
+            maxZoom: layerName === 'streetlights' ? 18 : layerName === 'roads' ? 17 : 15,
+          });
+          return;
+        }
+      }
+    }
+
+    // 2. Use cached/configured layer bounds for instant safe navigation
+    if (this.layerExtentsCache[layerName]) {
+      this.map.getView().fit(this.layerExtentsCache[layerName], {
+        padding: [50, 50, 50, 50],
+        duration: 600,
+      });
+      return;
+    }
+
+    // 3. Fallback: try Backend API to get PostGIS bounds
+    try {
+      const extent = await apiClient.spatial.getExtent(layerName);
+      if (extent) {
+        this.layerExtentsCache[layerName] = extent;
+        this.map.getView().fit(extent, {
+          padding: [50, 50, 50, 50],
+          duration: 600,
+        });
+        return;
+      }
+    } catch (e) {
+      console.warn('Failed to fetch layer bounds from backend:', e);
     }
   }
 

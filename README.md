@@ -205,6 +205,49 @@ Request / response bodies use **GeoJSON Feature** format.
 
 ---
 
-## GeoServer
+## GIS Feature Management & Spatial Workflows
 
-See [docs/geoserver-setup.md](./docs/geoserver-setup.md) for the manual configuration checklist.
+### 1. Spatial Hierarchy & Referential Integrity
+The system models municipal assets in a strict 5-tier spatial and administrative hierarchy:
+
+```
+State (MultiPolygon)
+  └── District (MultiPolygon)
+        └── Zone (Polygon — Municipal Ward Boundaries)
+              └── Road (LineString — Intersects Zone)
+                    └── Streetlight (Point — DWithin 10m of Road)
+```
+
+- **Referential Integrity**: Foreign keys enforce hierarchy integrity (`roads.zone_id REFERENCES zones(id) ON DELETE RESTRICT`, `streetlights.road_id REFERENCES roads(id) ON DELETE RESTRICT`).
+- **Deletion Protection**: Deleting a Zone with child Roads or a Road with child Streetlights is rejected by the database (PostgreSQL error 23503), mapped by Express to `HTTP 409 Conflict`, and surfaced directly to the operator in the HUD card and error toaster without modifying database constraints.
+
+### 2. Feature ↔ Map Synchronization & Zooming
+- **Bidirectional Selection**: Selecting a feature from the HUD search list highlights the feature on the map, centers the view, and synchronizes parent hierarchy context (`selectedZoneFeature`, `selectedRoadFeature`). Selecting on the map updates the HUD active card and scrolls the list item into view.
+- **Zoom to Feature**: Re-centers and fits view to the selected asset's geometry (Point: zoom 18; LineString: maxZoom 16 with padding; Polygon: fits bounding box with padding). Fetches full geometry on-demand without unbounded downloads.
+- **Zoom to Layer Extent**: Safe navigation to a layer's bounding box using loaded vector features, cached spatial extents, or GeoServer WMS `GetCapabilities` BoundingBox. Never triggers full-table WFS downloads.
+
+### 3. GIS Mutation Request Discipline
+Every spatial mutation follows strict request economy:
+- **Move Feature**: Dragging emits 0 API requests. Releasing (`translateend`) executes exactly 1 `PUT` request. API failure rolls back the geometry locally.
+- **Vertex Editing**: Inserting, dragging, or deleting vertices emits 0 API requests. Save produces exactly 1 `PUT` request. Cancel or Esc reverts to the original geometry with 0 requests.
+- **Create Feature**: Drawing emits 0 API requests. Form submit produces exactly 1 `POST` request.
+- **Delete Feature**: Requires 2-step confirmation and executes exactly 1 `DELETE` request.
+
+---
+
+## GeoServer Manual Publishing Workflow (States & Districts)
+
+For Phase 5, the following steps must be performed manually in the GeoServer Admin GUI (`http://localhost:8080/geoserver`) to publish the administrative boundaries:
+
+1. **Log in** with `admin` / `geoserver`.
+2. **Navigate** to `Layers` -> `Add a new layer`.
+3. **Select Store**: Choose the `ward:ward_db` PostGIS store.
+4. **Publish Layer**: Locate `states` (and later `districts`) in the list and click **Publish**.
+5. **Coordinate Reference System**: Ensure **Declared SRS** is exactly `EPSG:4326`.
+6. **Bounding Boxes**:
+   - Click **Compute from data** to generate the Native Bounding Box.
+   - Click **Compute from native bounds** to generate the Lat/Lon Bounding Box.
+7. **Save**: Scroll to the bottom and click **Save**.
+8. **Verify**: Open OpenLayers (`http://localhost:5173`) and ensure the map layers render without full-table WFS requests.
+
+See [docs/geoserver-setup.md](./docs/geoserver-setup.md) for the full initial configuration checklist.
