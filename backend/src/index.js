@@ -22,6 +22,7 @@ import { zonesRouter } from './routes/zones.routes.js';
 import { districtsRouter } from './routes/districts.routes.js';
 import { statesRouter } from './routes/states.routes.js';
 import { spatialRouter } from './routes/spatial.routes.js';
+import { geoserverRouter } from './routes/geoserver.routes.js';
 import { errorHandler } from './middleware/error-handler.middleware.js';
 
 const app = express();
@@ -46,6 +47,7 @@ app.use('/api/zones', zonesRouter);
 app.use('/api/districts', districtsRouter);
 app.use('/api/states', statesRouter);
 app.use('/api/spatial', spatialRouter);
+app.use('/api/geoserver', geoserverRouter);
 
 // ─── Centralized error handler (must be registered last) ─────────────────────
 app.use(errorHandler);

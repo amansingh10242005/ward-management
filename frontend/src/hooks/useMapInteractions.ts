@@ -3,9 +3,10 @@ import { olService } from '../lib/openlayers';
 import { apiClient } from '../lib/api';
 import { parseFeatureId } from '../utils/featureUtils';
 import { validateGeometry } from '../utils/geometryValidation';
+import { historyService } from '../services/historyService';
 
 export type Mode = 'idle' | 'create' | 'edit' | 'move' | 'vertex_edit';
-export type ActiveLayer = 'streetlights' | 'roads' | 'zones' | 'states' | 'districts' | null;
+export type ActiveLayer = 'streetlights' | 'roads' | 'zones' | 'states' | 'districts' | string | null;
 
 export function useMapInteractions() {
   const [mode, setMode] = useState<Mode>('idle');
@@ -38,6 +39,7 @@ export function useMapInteractions() {
       }
       setSelectedFeature(null);
       olService.setSelectedFeature(null, null);
+      olService.clearDynamicFeatures();
       setMode('idle');
     } else {
       let shouldCancel = false;
@@ -62,6 +64,7 @@ export function useMapInteractions() {
         }
         setSelectedFeature(null);
         olService.setSelectedFeature(null, null);
+        olService.clearDynamicFeatures();
         setMode('idle');
       }
     }
@@ -135,7 +138,7 @@ export function useMapInteractions() {
       setSelectedFeature(geojsonFeature);
       setActiveLayer(layerName as ActiveLayer);
       setMode('edit');
-      olService.setSelectedFeature(layerName, geojsonFeature.id);
+      olService.setSelectedFeature(layerName, geojsonFeature.id, geojsonFeature);
 
       // Infer hierarchy state
       if (layerName === 'zones') {
@@ -188,6 +191,7 @@ export function useMapInteractions() {
       olService.cancelInteraction();
     }
     olService.setSelectedFeature(null, null);
+    olService.clearDynamicFeatures();
     setSelectedFeature(null);
     setActiveLayer(null);
     setMode('idle');
@@ -240,17 +244,19 @@ export function useMapInteractions() {
     });
   }, [mode, activeLayer, cancelAction]);
 
-  const handleFormSuccess = useCallback((action?: 'create' | 'update' | 'delete', featureId?: string) => {
+  const handleFormSuccess = useCallback((action?: 'create' | 'update' | 'delete', featureId?: string, layerName?: string) => {
     olService.cancelInteraction();
     olService.setSelectedFeature(null, null);
+    olService.clearDynamicFeatures();
     setSelectedFeature(null);
     setMode('idle');
 
-    if (action === 'delete' && featureId && activeLayer) {
-      olService.removeWFSFeature(activeLayer, featureId);
+    const targetLayer = layerName || activeLayer;
+    if (action === 'delete' && featureId && targetLayer) {
+      olService.removeWFSFeature(targetLayer, featureId);
     }
-    if (activeLayer) {
-      olService.refreshLayer(activeLayer);
+    if (targetLayer) {
+      olService.refreshLayer(targetLayer);
     }
     setActiveLayer(null);
   }, [activeLayer]);
@@ -259,6 +265,8 @@ export function useMapInteractions() {
     if (!activeLayer) return;
     setMode('move');
     const fid = selectedFeature ? selectedFeature.id : null;
+    const beforeGeom = selectedFeature?.geometry ? JSON.parse(JSON.stringify(selectedFeature.geometry)) : null;
+    const beforeProps = selectedFeature?.properties ? JSON.parse(JSON.stringify(selectedFeature.properties)) : {};
     olService.activateTranslate(
       activeLayer,
       async (translatedFeature, rollback) => {
@@ -270,17 +278,45 @@ export function useMapInteractions() {
             properties: translatedFeature.properties,
           };
           
-          if (activeLayer === 'streetlights') {
-            await apiClient.streetlights.update(rawId as string, payload as any);
-          } else if (activeLayer === 'roads') {
-            await apiClient.roads.update(rawId as string, payload as any);
-          } else if (activeLayer === 'zones') {
-            await apiClient.zones.update(rawId as string, payload as any);
-          } else if (activeLayer === 'states') {
-            await apiClient.states.update(rawId as string, payload as any);
-          } else if (activeLayer === 'districts') {
-            await apiClient.districts.update(rawId as string, payload as any);
+          const isCoreLayer = ['streetlights', 'roads', 'zones', 'states', 'districts'].includes(activeLayer);
+
+          if (isCoreLayer) {
+            if (activeLayer === 'streetlights') {
+              await apiClient.streetlights.update(rawId as string, payload as any);
+            } else if (activeLayer === 'roads') {
+              await apiClient.roads.update(rawId as string, payload as any);
+            } else if (activeLayer === 'zones') {
+              await apiClient.zones.update(rawId as string, payload as any);
+            } else if (activeLayer === 'states') {
+              await apiClient.states.update(rawId as string, payload as any);
+            } else if (activeLayer === 'districts') {
+              await apiClient.districts.update(rawId as string, payload as any);
+            }
+          } else {
+            // Dynamic WFS-T Update
+            await apiClient.geoserver.transaction({
+              layerName: activeLayer,
+              featureId: translatedFeature.id,
+              action: 'update',
+              feature: payload,
+            });
           }
+
+          historyService.recordSuccess({
+            operationType: 'move',
+            layerName: activeLayer,
+            isCore: isCoreLayer,
+            originalFeatureId: translatedFeature.id,
+            currentFeatureId: translatedFeature.id,
+            before: {
+              geometry: beforeGeom,
+              properties: beforeProps,
+            },
+            after: {
+              geometry: translatedFeature.geometry,
+              properties: translatedFeature.properties,
+            },
+          });
           
           // Refresh and switch back to normal feature state
           olService.refreshLayer(activeLayer);
@@ -334,6 +370,9 @@ export function useMapInteractions() {
     setIsSavingVertex(true);
     setVertexEditError(null);
 
+    const beforeGeom = selectedFeature?.geometry ? JSON.parse(JSON.stringify(selectedFeature.geometry)) : null;
+    const beforeProps = selectedFeature?.properties ? JSON.parse(JSON.stringify(selectedFeature.properties)) : {};
+
     try {
       const finalGeom =
         olService.getVertexEditCurrentGeometry() ||
@@ -357,18 +396,49 @@ export function useMapInteractions() {
         properties: selectedFeature.properties || {},
       };
 
+      const isCoreLayer = ['streetlights', 'roads', 'zones', 'states', 'districts'].includes(activeLayer);
       let updatedFeature: any = null;
-      if (activeLayer === 'streetlights') {
-        updatedFeature = await apiClient.streetlights.update(rawId as string, payload as any);
-      } else if (activeLayer === 'roads') {
-        updatedFeature = await apiClient.roads.update(rawId as string, payload as any);
-      } else if (activeLayer === 'zones') {
-        updatedFeature = await apiClient.zones.update(rawId as string, payload as any);
-      } else if (activeLayer === 'states') {
-        updatedFeature = await apiClient.states.update(rawId as string, payload as any);
-      } else if (activeLayer === 'districts') {
-        updatedFeature = await apiClient.districts.update(rawId as string, payload as any);
+
+      if (isCoreLayer) {
+        if (activeLayer === 'streetlights') {
+          updatedFeature = await apiClient.streetlights.update(rawId as string, payload as any);
+        } else if (activeLayer === 'roads') {
+          updatedFeature = await apiClient.roads.update(rawId as string, payload as any);
+        } else if (activeLayer === 'zones') {
+          updatedFeature = await apiClient.zones.update(rawId as string, payload as any);
+        } else if (activeLayer === 'states') {
+          updatedFeature = await apiClient.states.update(rawId as string, payload as any);
+        } else if (activeLayer === 'districts') {
+          updatedFeature = await apiClient.districts.update(rawId as string, payload as any);
+        }
+      } else {
+        // Dynamic WFS-T Update
+        await apiClient.geoserver.transaction({
+          layerName: activeLayer,
+          featureId: selectedFeature.id,
+          action: 'update',
+          feature: payload,
+        });
+        // We simulate the updated feature so UI can reflect it immediately
+        updatedFeature = payload;
+        updatedFeature.id = selectedFeature.id;
       }
+
+      historyService.recordSuccess({
+        operationType: 'vertex',
+        layerName: activeLayer,
+        isCore: isCoreLayer,
+        originalFeatureId: selectedFeature.id,
+        currentFeatureId: selectedFeature.id,
+        before: {
+          geometry: beforeGeom,
+          properties: beforeProps,
+        },
+        after: {
+          geometry: finalGeom,
+          properties: selectedFeature.properties || {},
+        },
+      });
 
       // Finish OpenLayers editing session in-place; keep vector features intact
       olService.finishVertexEdit();
@@ -413,6 +483,30 @@ export function useMapInteractions() {
     }
   }, [activeLayer]);
 
+  const handleUndo = useCallback(async () => {
+    return await historyService.undo({
+      onSelectionChange: (feature, layerName) => {
+        setSelectedFeature(feature);
+        if (layerName) setActiveLayer(layerName);
+      },
+      onError: (err) => {
+        setUiError(err);
+      },
+    });
+  }, []);
+
+  const handleRedo = useCallback(async () => {
+    return await historyService.redo({
+      onSelectionChange: (feature, layerName) => {
+        setSelectedFeature(feature);
+        if (layerName) setActiveLayer(layerName);
+      },
+      onError: (err) => {
+        setUiError(err);
+      },
+    });
+  }, []);
+
   return {
     mode,
     activeLayer,
@@ -441,5 +535,9 @@ export function useMapInteractions() {
     isSavingVertex,
     vertexEditError,
     currentVertexGeometry,
+
+    // Undo / Redo exports
+    handleUndo,
+    handleRedo,
   };
 }

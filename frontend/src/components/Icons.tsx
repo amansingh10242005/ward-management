@@ -317,3 +317,17 @@ export const IconZoomLayer = (props: React.SVGProps<SVGSVGElement>) => (
   </SVG>
 );
 
+export const IconUndo = (props: React.SVGProps<SVGSVGElement>) => (
+  <SVG {...props}>
+    <path d="M3 7v6h6" />
+    <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13" />
+  </SVG>
+);
+
+export const IconRedo = (props: React.SVGProps<SVGSVGElement>) => (
+  <SVG {...props}>
+    <path d="M21 7v6h-6" />
+    <path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13" />
+  </SVG>
+);
+

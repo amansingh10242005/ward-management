@@ -145,6 +145,10 @@ python import_geopandas.py --mode replace
 python import_geopandas.py --dry-run
 ```
 
+### Live QGIS → PostGIS Import Workflow
+For the live TL assessment demo (where unknown vector datasets must be imported and published in real-time), see the dedicated QGIS manual workflow document:
+[docs/qgis-live-demo.md](./docs/qgis-live-demo.md)
+
 ### Backend
 ```bash
 cd backend

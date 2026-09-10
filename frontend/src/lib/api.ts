@@ -155,4 +155,24 @@ export const apiClient = {
       return data.extent;
     },
   },
+
+  geoserver: {
+    getLayers: async (): Promise<any[]> => {
+      const res = await fetch(`${API_BASE}/geoserver/layers`);
+      const data = await handleResponse<{ layers: any[] }>(res);
+      return data.layers;
+    },
+    getSchema: async (layerName: string): Promise<any> => {
+      const res = await fetch(`${API_BASE}/geoserver/schema/${layerName}`);
+      return handleResponse<any>(res);
+    },
+    transaction: async (payload: any): Promise<any> => {
+      const res = await fetch(`${API_BASE}/geoserver/wfs/transaction`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      return handleResponse<any>(res);
+    }
+  },
 };

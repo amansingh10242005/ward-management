@@ -5,12 +5,13 @@ import ZonesForm from '../features/zones/ZonesForm';
 import DistrictsForm from '../features/districts/DistrictsForm';
 import StatesForm from '../features/states/StatesForm';
 import { IconMapPin } from './Icons';
+import DynamicFeatureForm from './DynamicFeatureForm';
 
 interface FeatureFormProps {
   feature: any | null;
   mode: 'idle' | 'create' | 'edit' | 'move' | 'vertex_edit';
-  activeLayer: 'streetlights' | 'roads' | 'zones' | 'states' | 'districts' | null;
-  onSuccess: (action?: 'create' | 'update' | 'delete', featureId?: string) => void;
+  activeLayer: 'streetlights' | 'roads' | 'zones' | 'states' | 'districts' | string | null;
+  onSuccess: (action?: 'create' | 'update' | 'delete', featureId?: string, layerName?: string) => void;
   onCancel: () => void;
   onMoveStart: () => void;
   selectedZoneFeature?: any;
@@ -111,7 +112,17 @@ const FeatureForm: React.FC<FeatureFormProps> = ({
         />
       );
     default:
-      return null;
+      // Fallback for dynamic layers
+      return (
+        <DynamicFeatureForm
+          feature={feature}
+          mode={formMode}
+          layerName={activeLayer}
+          onSuccess={onSuccess}
+          onCancel={onCancel}
+          onMoveStart={onMoveStart}
+        />
+      );
   }
 };
 

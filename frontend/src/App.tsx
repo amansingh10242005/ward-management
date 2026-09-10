@@ -9,9 +9,15 @@ import {
   IconFullscreen,
   IconShare,
   IconCompass,
+  IconUndo,
+  IconRedo,
 } from './components/Icons';
 import { olService, BasemapId } from './lib/openlayers';
 import { useMapInteractions } from './hooks/useMapInteractions';
+import UnifiedLegend from './components/UnifiedLegend';
+import { DynamicLayer } from './components/DynamicLegend';
+import { apiClient } from './lib/api';
+import { useHistory } from './hooks/useHistory';
 
 function App() {
   const [isDarkMode, setIsDarkMode] = useState(true);
@@ -30,6 +36,60 @@ function App() {
     olService.setBasemap(id);
     setCurrentBasemap(id);
   };
+
+  const [dynamicLayers, setDynamicLayers] = useState<DynamicLayer[]>([]);
+  const [dynamicVisibility, setDynamicVisibility] = useState<Record<string, boolean>>({});
+  const [coreVisibility, setCoreVisibility] = useState<Record<string, boolean>>({
+    streetlights: true,
+    roads: true,
+    zones: true,
+    states: true,
+    districts: true,
+  });
+
+  const handleToggleCoreLayer = useCallback((layerName: string, isVisible: boolean) => {
+    setCoreVisibility((prev) => ({ ...prev, [layerName]: isVisible }));
+    olService.toggleLayer(layerName, isVisible);
+  }, []);
+
+  // Synchronize React visibility state with OpenLayers layer visibility
+  useEffect(() => {
+    return olService.onLayerVisibilityChange((layerName, isVisible) => {
+      if (['streetlights', 'roads', 'zones', 'states', 'districts'].includes(layerName)) {
+        setCoreVisibility((prev) => prev[layerName] === isVisible ? prev : ({ ...prev, [layerName]: isVisible }));
+      } else {
+        setDynamicVisibility((prev) => prev[layerName] === isVisible ? prev : ({ ...prev, [layerName]: isVisible }));
+      }
+    });
+  }, []);
+
+  const refreshDynamicLayers = useCallback(async () => {
+    try {
+      const layers = await apiClient.geoserver.getLayers();
+      const coreLayerNames = ['states', 'districts', 'zones', 'roads', 'streetlights'];
+      const discovered = (layers || []).filter((l: any) => !coreLayerNames.includes(l.name));
+      setDynamicLayers(discovered);
+      discovered.forEach((l: any) => {
+        olService.addDynamicLayer(l.name, l.qualifiedName, l.workspace, l.latLonBoundingBox);
+      });
+      return discovered;
+    } catch (err) {
+      console.warn('Failed to load dynamic layers from GeoServer:', err);
+      return [];
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshDynamicLayers();
+    if (typeof window !== 'undefined') {
+      (window as any).__refreshDynamicLayers = refreshDynamicLayers;
+    }
+  }, [refreshDynamicLayers]);
+
+  const handleToggleDynamicLayer = useCallback((layerName: string, isVisible: boolean) => {
+    setDynamicVisibility((prev) => ({ ...prev, [layerName]: isVisible }));
+    olService.toggleDynamicLayer(layerName, isVisible);
+  }, []);
 
   const {
     mode,
@@ -57,6 +117,35 @@ function App() {
     currentVertexGeometry,
   } = useMapInteractions();
 
+  const { canUndo, canRedo, isBusy, handleUndo, handleRedo } = useHistory();
+
+  // Stage E4: Global keyboard shortcuts (Ctrl+Z -> Undo, Ctrl+Y / Ctrl+Shift+Z -> Redo)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+        return;
+      }
+
+      if ((e.ctrlKey || e.metaKey) && !e.altKey) {
+        if (e.key === 'z' || e.key === 'Z') {
+          if (e.shiftKey) {
+            e.preventDefault();
+            handleRedo();
+          } else {
+            e.preventDefault();
+            handleUndo();
+          }
+        } else if (e.key === 'y' || e.key === 'Y') {
+          e.preventDefault();
+          handleRedo();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleUndo, handleRedo]);
 
   useEffect(() => {
     return olService.onRotationChange(setMapRotation);
@@ -179,6 +268,13 @@ function App() {
             vertexEditError={vertexEditError}
             currentVertexGeometry={currentVertexGeometry}
             onError={setUiError}
+            dynamicLayers={dynamicLayers}
+            dynamicVisibility={dynamicVisibility}
+            onToggleDynamicLayer={handleToggleDynamicLayer}
+            coreVisibility={coreVisibility}
+            onToggleCoreLayer={handleToggleCoreLayer}
+            onUndo={handleUndo}
+            onRedo={handleRedo}
           />
         </aside>
 
@@ -194,7 +290,7 @@ function App() {
 
           {/* Map controls cluster — top-right */}
           <div className="map-controls-cluster">
-            {/* Group 1: view controls & basemap selector */}
+            {/* Group 1: view controls & basemap selector & undo/redo */}
             <div className="map-control-group">
               <button
                 className="map-ctrl-btn"
@@ -227,6 +323,29 @@ function App() {
                 aria-label="Share"
               >
                 <IconShare />
+              </button>
+              <div className="map-ctrl-divider" />
+              <button
+                id="btn-map-undo"
+                data-testid="map-undo-btn"
+                className="map-ctrl-btn"
+                onClick={() => handleUndo()}
+                disabled={!canUndo || isBusy}
+                title="Undo (Ctrl+Z)"
+                aria-label="Undo"
+              >
+                <IconUndo width={16} height={16} />
+              </button>
+              <button
+                id="btn-map-redo"
+                data-testid="map-redo-btn"
+                className="map-ctrl-btn"
+                onClick={() => handleRedo()}
+                disabled={!canRedo || isBusy}
+                title="Redo (Ctrl+Y)"
+                aria-label="Redo"
+              >
+                <IconRedo width={16} height={16} />
               </button>
             </div>
 
@@ -268,6 +387,12 @@ function App() {
           <CoordinateBar />
 
           <MapContainer />
+
+          <UnifiedLegend
+            coreVisibility={coreVisibility}
+            dynamicLayers={dynamicLayers}
+            dynamicVisibility={dynamicVisibility}
+          />
         </main>
 
 

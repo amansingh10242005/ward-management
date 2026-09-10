@@ -10,23 +10,23 @@ import {
   IconHexagon,
   IconEye,
   IconEyeOff,
-  IconEdit,
-  IconVertexEdit,
-  IconMove,
-  IconTrash,
   IconMapPin,
   IconSun,
   IconMoon,
-  IconFocus,
   IconZoomLayer,
+  IconUndo,
+  IconRedo,
 } from "./Icons";
 import { getFeatureTelemetry, calculateGeometryMetric } from "../utils/geoMetrics";
 import FeatureForm from "./FeatureForm";
+import FeatureInfo from "./FeatureInfo";
 import InlineFeatureList from "./InlineFeatureList";
 import { apiClient } from "../lib/api";
 import { parseFeatureId } from "../utils/featureUtils";
+import { useHistory } from "../hooks/useHistory";
+import { historyService } from "../services/historyService";
 
-export type ActiveLayerType = "streetlights" | "roads" | "zones" | "states" | "districts" | null;
+export type ActiveLayerType = "streetlights" | "roads" | "zones" | "states" | "districts" | string | null;
 
 interface TechSidebarProps {
   activeLayer: ActiveLayerType;
@@ -38,7 +38,7 @@ interface TechSidebarProps {
   onDrawLine: () => void;
   onDrawPolygon: () => void;
   onMoveStart: () => void;
-  onSuccess: (action?: "create" | "update" | "delete", featureId?: string) => void;
+  onSuccess: (action?: "create" | "update" | "delete", featureId?: string, layerName?: string) => void;
   onCancel: () => void;
   selectedZoneFeature?: any;
   selectedRoadFeature?: any;
@@ -57,6 +57,19 @@ interface TechSidebarProps {
   vertexEditError?: string | null;
   currentVertexGeometry?: any;
   onError?: (error: string) => void;
+
+  // Phase 7C Dynamic Layers
+  dynamicLayers?: any[];
+  dynamicVisibility?: Record<string, boolean>;
+  onToggleDynamicLayer?: (layerName: string, isVisible: boolean) => void;
+
+  // Unified Legend / Core Visibility Synchronization
+  coreVisibility?: Record<string, boolean>;
+  onToggleCoreLayer?: (layerName: string, isVisible: boolean) => void;
+
+  // Stage E4 Undo / Redo
+  onUndo?: () => void;
+  onRedo?: () => void;
 }
 
 export default function TechSidebar({
@@ -84,23 +97,34 @@ export default function TechSidebar({
   vertexEditError = null,
   currentVertexGeometry = null,
   onError,
+  dynamicLayers = [],
+  dynamicVisibility = {},
+  onToggleDynamicLayer,
+  coreVisibility,
+  onToggleCoreLayer,
+  onUndo,
+  onRedo,
 }: TechSidebarProps) {
-  const [layers, setLayers] = useState({
+  const { canUndo, canRedo, isBusy, handleUndo, handleRedo } = useHistory();
+  const [localLayers, setLocalLayers] = useState<Record<string, boolean>>({
     streetlights: true,
     roads: true,
     zones: true,
     states: true,
     districts: true,
   });
+  const layers = coreVisibility ?? localLayers;
 
   const [isEditingForm, setIsEditingForm] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     setIsEditingForm(false);
     setConfirmDelete(false);
     setDeleteError(null);
+    setIsDeleting(false);
   }, [selectedFeature]);
 
   useEffect(() => {
@@ -109,11 +133,19 @@ export default function TechSidebar({
     }
   }, [mode]);
 
-  const toggleLayer = (e: React.MouseEvent, layerName: keyof typeof layers) => {
+  const toggleLayer = (e: React.MouseEvent, layerName: string) => {
     e.stopPropagation();
     const isVisible = !layers[layerName];
-    setLayers((prev) => ({ ...prev, [layerName]: isVisible }));
-    olService.toggleLayer(layerName, isVisible);
+    if (['streetlights', 'roads', 'zones', 'states', 'districts'].includes(layerName)) {
+      if (onToggleCoreLayer) {
+        onToggleCoreLayer(layerName, isVisible);
+      } else {
+        setLocalLayers((prev) => ({ ...prev, [layerName]: isVisible }));
+        olService.toggleLayer(layerName as any, isVisible);
+      }
+    } else if (onToggleDynamicLayer) {
+      onToggleDynamicLayer(layerName, isVisible);
+    }
   };
 
   const handleSelectLayer = (layerName: ActiveLayerType) => {
@@ -159,27 +191,60 @@ export default function TechSidebar({
   };
 
   const handleDeleteClick = async () => {
+    if (isDeleting) return;
+
     if (!confirmDelete) {
       setConfirmDelete(true);
       setDeleteError(null);
       return;
     }
     if (!selectedFeature || !activeLayer) return;
+
     try {
+      setIsDeleting(true);
       setDeleteError(null);
-      const rawId = parseFeatureId(selectedFeature.id);
-      if (activeLayer === 'streetlights') {
-        await apiClient.streetlights.delete(rawId as string);
-      } else if (activeLayer === 'roads') {
-        await apiClient.roads.delete(rawId as string);
-      } else if (activeLayer === 'zones') {
-        await apiClient.zones.delete(rawId as string);
-      } else if (activeLayer === 'states') {
-        await apiClient.states.delete(rawId as string);
-      } else if (activeLayer === 'districts') {
-        await apiClient.districts.delete(rawId as string);
+      const isCore = ['streetlights', 'roads', 'zones', 'states', 'districts'].includes(activeLayer);
+      const beforeGeom = selectedFeature?.geometry ? JSON.parse(JSON.stringify(selectedFeature.geometry)) : null;
+      const beforeProps = selectedFeature?.properties ? JSON.parse(JSON.stringify(selectedFeature.properties)) : {};
+      const fid = selectedFeature.id;
+
+      if (isCore) {
+        const rawId = parseFeatureId(selectedFeature.id);
+        if (activeLayer === 'streetlights') {
+          await apiClient.streetlights.delete(rawId as string);
+        } else if (activeLayer === 'roads') {
+          await apiClient.roads.delete(rawId as string);
+        } else if (activeLayer === 'zones') {
+          await apiClient.zones.delete(rawId as string);
+        } else if (activeLayer === 'states') {
+          await apiClient.states.delete(rawId as string);
+        } else if (activeLayer === 'districts') {
+          await apiClient.districts.delete(rawId as string);
+        }
+      } else {
+        // Dynamic layer GeoServer WFS-T Delete
+        await apiClient.geoserver.transaction({
+          layerName: activeLayer,
+          featureId: selectedFeature.id,
+          action: 'delete'
+        });
       }
-      onSuccess('delete', selectedFeature.id);
+
+      historyService.recordSuccess({
+        operationType: 'delete',
+        layerName: activeLayer,
+        isCore,
+        originalFeatureId: fid,
+        currentFeatureId: fid,
+        before: {
+          geometry: beforeGeom,
+          properties: beforeProps,
+          feature: selectedFeature,
+        },
+        after: {},
+      });
+
+      onSuccess('delete', selectedFeature.id, activeLayer);
     } catch (err: any) {
       console.error('Failed to delete feature:', err);
       const msg = err.message || 'Failed to delete feature.';
@@ -188,6 +253,7 @@ export default function TechSidebar({
         onError(msg);
       }
     } finally {
+      setIsDeleting(false);
       setConfirmDelete(false);
     }
   };
@@ -211,7 +277,29 @@ export default function TechSidebar({
             <div className="hud-brand-subtitle">Infrastructure &amp; Asset Management</div>
           </div>
         </div>
-        <div className="hud-brand-actions">
+        <div className="hud-brand-actions" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <button
+            id="btn-hud-undo"
+            data-testid="hud-undo-btn"
+            className="hud-action-btn"
+            onClick={() => onUndo ? onUndo() : handleUndo()}
+            disabled={!canUndo || isBusy}
+            title="Undo (Ctrl+Z)"
+            aria-label="Undo"
+          >
+            <IconUndo width={15} height={15} />
+          </button>
+          <button
+            id="btn-hud-redo"
+            data-testid="hud-redo-btn"
+            className="hud-action-btn"
+            onClick={() => onRedo ? onRedo() : handleRedo()}
+            disabled={!canRedo || isBusy}
+            title="Redo (Ctrl+Y)"
+            aria-label="Redo"
+          >
+            <IconRedo width={15} height={15} />
+          </button>
           {toggleTheme && (
             <button
               className="hud-theme-toggle-btn"
@@ -320,86 +408,27 @@ export default function TechSidebar({
           </div>
         )}
 
-        {/* ACTIVE FEATURE CARD */}
+        {/* STAGE E1: FEATURE INFO INSPECTOR PANEL */}
         {selectedFeature && !isEditingForm && mode !== "move" && mode !== "vertex_edit" && (
           <div className="hud-feature-card">
-            <div className="hud-card-topbar">
-              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                <button
-                  type="button"
-                  className="hud-nav-btn"
-                  onClick={() => { if (selectedFeature) onCancel(); else setActiveLayer(null); }}
-                  title="Deselect feature"
-                  aria-label="Back"
-                  style={{ width: "22px", height: "22px" }}
-                >
-                  <IconChevronLeft width={15} height={15} />
-                </button>
-                <span className="hud-card-layer-name">{headerTitle}</span>
-              </div>
-              <span className="hud-geom-badge">{headerBadge}</span>
-            </div>
-
-            <div className="hud-card-header">
-              <span className="hud-card-badge-label">ACTIVE FEATURE</span>
-              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                {onZoomToFeature && (
-                  <button
-                    type="button"
-                    className="hud-nav-btn"
-                    onClick={onZoomToFeature}
-                    title="Zoom to feature"
-                    aria-label="Zoom to feature"
-                    style={{ width: "22px", height: "22px" }}
-                  >
-                    <IconFocus width={13} height={13} />
-                  </button>
-                )}
-                <span className="hud-fid-pill">{telemetry?.fid}</span>
-              </div>
-            </div>
-
-            <div className="hud-feature-title" title={telemetry?.title}>
-              {telemetry?.title}
-            </div>
-
-            <div className="hud-telemetry-grid">
-              {telemetry?.cells.map((cell, idx) => (
-                <div key={idx} className="hud-telemetry-cell">
-                  <div className="hud-cell-label">{cell.label}</div>
-                  <div className={`hud-cell-value ${cell.isTeal ? "teal-highlight" : ""}`}>
-                    {cell.value}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="hud-actions-grid">
-              <button type="button" className="hud-action-btn" onClick={() => setIsEditingForm(true)}>
-                <IconEdit width={14} height={14} />
-                <span>Edit Feature</span>
-              </button>
-              <button type="button" className="hud-action-btn" onClick={handleStartVertexEdit}>
-                <IconVertexEdit width={15} height={15} />
-                <span>Vertex Edit</span>
-              </button>
-              <button type="button" className="hud-action-btn" onClick={onMoveStart}>
-                <IconMove width={14} height={14} />
-                <span>Move Feature</span>
-              </button>
-              <button type="button" className={`hud-action-btn delete-btn ${confirmDelete ? "confirm" : ""}`} onClick={handleDeleteClick}>
-                <IconTrash width={14} height={14} />
-                <span>{confirmDelete ? "Confirm Del" : "Delete"}</span>
-              </button>
-            </div>
-
+            <FeatureInfo
+              feature={selectedFeature}
+              layerName={activeLayer}
+              dynamicLayers={dynamicLayers}
+              onZoomToFeature={onZoomToFeature}
+              onEditFeature={() => setIsEditingForm(true)}
+              onVertexEditFeature={handleStartVertexEdit}
+              onMoveFeature={onMoveStart}
+              onDeleteFeature={selectedFeature?.id ? handleDeleteClick : undefined}
+              onClose={() => { if (selectedFeature) onCancel(); else setActiveLayer(null); }}
+              confirmDelete={confirmDelete}
+              isDeleting={isDeleting}
+            />
             {deleteError && (
               <div className="hud-vertex-error-box" style={{ marginTop: '10px' }}>
                 <div className="hud-vertex-error-msg">{deleteError}</div>
               </div>
             )}
-
-
           </div>
         )}
 
@@ -476,7 +505,7 @@ export default function TechSidebar({
             </div>
 
             <InlineFeatureList
-              activeLayer={activeLayer!}
+              activeLayer={activeLayer! as any}
               selectedFeature={selectedFeature}
               onSelectFeature={onSelectFeature}
               onCreateClick={["streetlights", "roads", "zones"].includes(activeLayer!) ? handleCreateClick : undefined}
@@ -554,6 +583,59 @@ export default function TechSidebar({
                 </div>
               </div>
             </div>
+
+            {/* DISCOVERED LAYERS */}
+            {dynamicLayers.length > 0 && (
+              <div className="hud-group-section">
+                <div className="hud-group-header">
+                  <span className="hud-group-title">DISCOVERED LAYERS</span>
+                  <span className="hud-group-status">{dynamicLayers.filter(l => dynamicVisibility[l.name]).length} Active</span>
+                </div>
+                <div className="hud-layer-list">
+                  {dynamicLayers.map(layer => {
+                    const isVisible = !!dynamicVisibility[layer.name];
+                    return (
+                      <div key={layer.name} className="hud-layer-row" style={{ cursor: 'default' }}>
+                        <div className="hud-grip" title="Discovered Layer"><IconNetwork /></div>
+                        <div className="hud-layer-icon" style={{ background: 'rgba(255,255,255,0.1)' }}>
+                          <IconSquare width={15} height={15} />
+                        </div>
+                        <div className="hud-layer-name" title={layer.name}>{layer.title || layer.name}</div>
+                        <div className="hud-row-badge" style={{ background: 'rgba(255,255,255,0.1)' }}>{layer.workspace}</div>
+                        {onZoomToLayer && (
+                          <button
+                            type="button"
+                            className="hud-eye-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onZoomToLayer(layer.name);
+                            }}
+                            title={`Zoom to ${layer.title || layer.name} extent`}
+                            aria-label={`Zoom to ${layer.title || layer.name} extent`}
+                            style={{ width: "26px", height: "26px", marginRight: "4px" }}
+                          >
+                            <IconZoomLayer width={14} height={14} />
+                          </button>
+                        )}
+                        <button 
+                          type="button" 
+                          className={`hud-eye-btn ${!isVisible ? "hidden" : ""}`} 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (onToggleDynamicLayer) {
+                              onToggleDynamicLayer(layer.name, !isVisible);
+                            }
+                          }} 
+                          title={isVisible ? `Hide ${layer.title || layer.name}` : `Show ${layer.title || layer.name}`}
+                        >
+                          {isVisible ? <IconEye width={15} height={15} /> : <IconEyeOff width={15} height={15} />}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </>
         )}
 

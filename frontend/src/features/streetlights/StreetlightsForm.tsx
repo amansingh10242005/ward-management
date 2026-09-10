@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { apiClient } from '../../lib/api';
 import { StreetlightFeature, ZoneFeature, RoadFeature } from '../../types/gis';
 import { parseFeatureId } from '../../utils/featureUtils';
+import { historyService } from '../../services/historyService';
 
 interface StreetlightsFormProps {
   feature: StreetlightFeature | null;
@@ -56,10 +57,42 @@ const StreetlightsForm: React.FC<StreetlightsFormProps> = ({ feature, mode, onSu
 
       if (mode === 'edit' && feature!.id) {
         const rawId = parseFeatureId(feature!.id);
+        const beforeGeom = feature?.geometry ? JSON.parse(JSON.stringify(feature.geometry)) : null;
+        const beforeProps = feature?.properties ? JSON.parse(JSON.stringify(feature.properties)) : {};
+        const fid = String(feature!.id);
         await apiClient.streetlights.update(rawId as string, payload as any);
+        historyService.recordSuccess({
+          operationType: 'update',
+          layerName: 'streetlights',
+          isCore: true,
+          originalFeatureId: fid,
+          currentFeatureId: fid,
+          before: {
+            geometry: beforeGeom,
+            properties: beforeProps,
+          },
+          after: {
+            geometry: payload.geometry,
+            properties: payload.properties,
+          },
+        });
         onSuccess('update', feature!.id as string);
       } else {
-        await apiClient.streetlights.create(payload as any);
+        const res = await apiClient.streetlights.create(payload as any);
+        if (res && res.id) {
+          historyService.recordSuccess({
+            operationType: 'create',
+            layerName: 'streetlights',
+            isCore: true,
+            originalFeatureId: String(res.id),
+            currentFeatureId: String(res.id),
+            before: {},
+            after: {
+              geometry: payload.geometry,
+              properties: payload.properties,
+            },
+          });
+        }
         onSuccess('create');
       }
     } catch (err: any) {

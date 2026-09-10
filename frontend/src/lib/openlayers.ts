@@ -10,7 +10,7 @@
  *  - Apply conditional glow styles to selected features
  */
 
-import Map from 'ol/Map';
+import OlMap from 'ol/Map';
 import View from 'ol/View';
 import TileLayer from 'ol/layer/Tile';
 import TileWMS from 'ol/source/TileWMS';
@@ -41,13 +41,14 @@ import Fill from 'ol/style/Fill';
 import Stroke from 'ol/style/Stroke';
 import Text from 'ol/style/Text';
 import { bbox as bboxStrategy } from 'ol/loadingstrategy';
-import { fromLonLat } from 'ol/proj';
+import { fromLonLat, transformExtent } from 'ol/proj';
 import Collection from 'ol/Collection';
 import Feature from 'ol/Feature';
 import Point from 'ol/geom/Point';
 import LineString from 'ol/geom/LineString';
 import Polygon from 'ol/geom/Polygon';
 import { altKeyOnly, singleClick } from 'ol/events/condition';
+import { unByKey } from 'ol/Observable';
 import { parseFeatureId } from '../utils/featureUtils';
 import { apiClient } from './api';
 
@@ -187,7 +188,7 @@ export interface PerfMetrics {
 // ── Service class ─────────────────────────────────────────────────────────────
 
 export class OpenLayersService {
-  private map: Map | null = null;
+  private map: OlMap | null = null;
   private layers: Record<string, TileLayer<TileWMS>> = {};
 
   private perfMetrics: PerfMetrics = {
@@ -440,6 +441,7 @@ export class OpenLayersService {
   private rotationListeners: ((rotation: number) => void)[] = [];
   private moveEndListeners: (() => void)[] = [];
   private layerRefreshListeners: ((layerName: string) => void)[] = [];
+  private layerVisibilityListeners: ((layerName: string, isVisible: boolean) => void)[] = [];
 
   private basemapLayer: TileLayer<any> | null = null;
   private currentBasemap: BasemapId = 'carto_dark';
@@ -454,6 +456,28 @@ export class OpenLayersService {
   private onVertexEditGeometryChange: ((geoJson: any) => void) | null = null;
   private onVertexEditCancelCallback: (() => void) | null = null;
   private savedSelectCallback: ((feature: any, layerName: string) => void) | null = null;
+  private dynamicSelectKey: any = null;
+  public dynamicVectorSource: VectorSource = new VectorSource();
+  public dynamicVectorLayer: VectorLayer<VectorSource> = new VectorLayer({
+    source: this.dynamicVectorSource,
+    style: new Style({
+      fill: new Fill({
+        color: 'rgba(255, 255, 255, 0.4)',
+      }),
+      stroke: new Stroke({
+        color: '#3399CC',
+        width: 3,
+      }),
+      image: new CircleStyle({
+        radius: 7,
+        fill: new Fill({
+          color: '#ffcc33',
+        }),
+      }),
+    }),
+    zIndex: 999, // Render on top of WMS
+  });
+  private dynamicLayerDefs: Map<string, { layerName: string; qualifiedName: string; workspace: string; latLonBoundingBox?: any }> = new Map();
 
   private createBasemapSource(id: BasemapId) {
     switch (id) {
@@ -547,7 +571,10 @@ export class OpenLayersService {
   // ── Initialization ──────────────────────────────────────────────────────────
 
   initialize(target: HTMLElement | string) {
-    if (this.map) return; // Prevent double initialization
+    if (this.map) {
+      this.map.setTarget(target);
+      return;
+    }
 
     this.layers = {
       zones: new TileLayer({
@@ -610,7 +637,7 @@ export class OpenLayersService {
       zIndex: 0,
     });
 
-    this.map = new Map({
+    this.map = new OlMap({
       target,
       controls: [], // Remove default OL controls (we use custom ones in React)
       layers: [
@@ -625,6 +652,7 @@ export class OpenLayersService {
         this.zonesWfsLayer,
         this.roadsWfsLayer,
         this.streetlightsWfsLayer,
+        this.dynamicVectorLayer,
         this.drawLayer,
       ],
       view: new View({
@@ -632,6 +660,29 @@ export class OpenLayersService {
         zoom:   12,
       }),
     });
+
+    // Mount any dynamic layers discovered before map initialization
+    if (this.dynamicLayerDefs && typeof this.dynamicLayerDefs.forEach === 'function') {
+      this.dynamicLayerDefs.forEach((def) => {
+        if (!this.layers[def.layerName]) {
+          const newLayer = new TileLayer({
+            source: new TileWMS({
+              url:        `${GEOSERVER_URL}/${def.workspace}/wms`,
+              params:     { LAYERS: def.qualifiedName, TILED: true, TRANSPARENT: true, FORMAT: 'image/png' },
+              serverType: 'geoserver',
+              crossOrigin: 'anonymous',
+              transition: 0,
+            }),
+            visible: false,
+            zIndex: 10,
+          });
+          this.layers[def.layerName] = newLayer;
+          this.map!.addLayer(newLayer);
+        }
+      });
+    } else {
+      this.dynamicLayerDefs = new Map();
+    }
 
     this.map.getView().on('change:rotation', () => {
       const rot = this.map!.getView().getRotation();
@@ -687,6 +738,7 @@ export class OpenLayersService {
 
     // Expose performance metrics globally for benchmarking and diagnostics
     if (typeof window !== 'undefined') {
+      (window as any).__olService = this;
       (window as any).__WIM_PERF__ = {
         getMetrics: () => this.getPerfMetrics(),
         reset: () => this.resetPerfMetrics(),
@@ -694,8 +746,98 @@ export class OpenLayersService {
     }
   }
 
-  getMap(): Map | null {
+  getMap(): OlMap | null {
     return this.map;
+  }
+
+  // ── Dynamic Layers (Phase 7C) ────────────────────────────────────────────────
+  
+  addDynamicLayer(layerName: string, qualifiedName: string, workspace: string, latLonBoundingBox?: any) {
+    if (latLonBoundingBox) {
+      const minx = Number(latLonBoundingBox.minx);
+      const miny = Number(latLonBoundingBox.miny);
+      const maxx = Number(latLonBoundingBox.maxx);
+      const maxy = Number(latLonBoundingBox.maxy);
+      if (!isNaN(minx) && !isNaN(miny) && !isNaN(maxx) && !isNaN(maxy)) {
+        this.layerExtentsCache[layerName] = transformExtent([minx, miny, maxx, maxy], 'EPSG:4326', 'EPSG:3857') as [number, number, number, number];
+      }
+    }
+
+    if (!this.dynamicLayerDefs || typeof this.dynamicLayerDefs.set !== 'function') {
+      this.dynamicLayerDefs = new Map();
+    }
+    this.dynamicLayerDefs.set(layerName, { layerName, qualifiedName, workspace, latLonBoundingBox });
+
+    if (!this.map || this.layers[layerName]) return;
+    
+    const newLayer = new TileLayer({
+      source: new TileWMS({
+        url:        `${GEOSERVER_URL}/${workspace}/wms`,
+        params:     { LAYERS: qualifiedName, TILED: true, TRANSPARENT: true, FORMAT: 'image/png' },
+        serverType: 'geoserver',
+        crossOrigin: 'anonymous',
+        transition: 0,
+      }),
+      visible: false,
+      zIndex: 10, // Above basemap (0), below existing vectors (880+)
+    });
+    
+    this.layers[layerName] = newLayer;
+    this.map.addLayer(newLayer);
+  }
+
+  toggleDynamicLayer(layerName: string, isVisible: boolean) {
+    if (!this.dynamicLayerDefs || typeof this.dynamicLayerDefs.has !== 'function') {
+      this.dynamicLayerDefs = new Map();
+    }
+    if (this.map && !this.layers[layerName] && this.dynamicLayerDefs.has(layerName)) {
+      const def = this.dynamicLayerDefs.get(layerName)!;
+      const newLayer = new TileLayer({
+        source: new TileWMS({
+          url:        `${GEOSERVER_URL}/${def.workspace}/wms`,
+          params:     { LAYERS: def.qualifiedName, TILED: true, TRANSPARENT: true, FORMAT: 'image/png' },
+          serverType: 'geoserver',
+          crossOrigin: 'anonymous',
+          transition: 0,
+        }),
+        visible: false,
+        zIndex: 10,
+      });
+      this.layers[def.layerName] = newLayer;
+      this.map.addLayer(newLayer);
+    }
+
+    const layer = this.layers[layerName];
+    if (layer) {
+      layer.setVisible(isVisible);
+    }
+    this.layerVisibilityListeners.forEach(l => l(layerName, isVisible));
+  }
+
+  zoomToDynamicLayerExtent(layerMeta: any) {
+    if (!this.map) return;
+    
+    const layerName = layerMeta?.name;
+    if (layerName && this.layerExtentsCache[layerName]) {
+      this.map.getView().fit(this.layerExtentsCache[layerName], { padding: [50, 50, 50, 50], duration: 800 });
+      return;
+    }
+
+    if (!layerMeta || !layerMeta.latLonBoundingBox) return;
+    const minx = Number(layerMeta.latLonBoundingBox.minx);
+    const miny = Number(layerMeta.latLonBoundingBox.miny);
+    const maxx = Number(layerMeta.latLonBoundingBox.maxx);
+    const maxy = Number(layerMeta.latLonBoundingBox.maxy);
+    if (isNaN(minx) || isNaN(miny) || isNaN(maxx) || isNaN(maxy)) return;
+
+    // Transform from EPSG:4326 (lat/lon) to EPSG:3857 (OpenLayers default web mercator)
+    const extent4326 = [minx, miny, maxx, maxy];
+    const extent3857 = transformExtent(extent4326, 'EPSG:4326', 'EPSG:3857') as [number, number, number, number];
+    if (layerName) {
+      this.layerExtentsCache[layerName] = extent3857;
+    }
+    
+    this.map.getView().fit(extent3857, { padding: [50, 50, 50, 50], duration: 800 });
   }
 
   // ── Selected feature glow ────────────────────────────────────────────────────
@@ -708,8 +850,37 @@ export class OpenLayersService {
     this.selectedLayerName  = layerName;
     this.selectedFeatureId  = featureId;
 
-    if (layerName && featureId && fallbackGeoJson) {
-      this.addOrUpdateWfsFeatureFromGeoJson(layerName, featureId, fallbackGeoJson);
+    const isCoreLayer = ['states', 'districts', 'zones', 'roads', 'streetlights'].includes(layerName || '');
+    
+    if (layerName && !isCoreLayer) {
+      if (fallbackGeoJson) {
+        if (this.dynamicVectorSource) {
+          this.dynamicVectorSource.clear();
+          const rawFeature = new GeoJSON().readFeature(fallbackGeoJson, {
+            dataProjection: 'EPSG:4326',
+            featureProjection: 'EPSG:3857'
+          });
+          const feature: Feature = (Array.isArray(rawFeature) ? rawFeature[0] : rawFeature) as Feature;
+          if (!feature.getId() && featureId) {
+            feature.setId(featureId);
+          }
+          this.dynamicVectorSource.addFeature(feature);
+        }
+      } else {
+        // If fallbackGeoJson was omitted, check if this feature is already in dynamicVectorSource
+        const existing = featureId && this.dynamicVectorSource ? (this.dynamicVectorSource.getFeatureById(featureId) || this.dynamicVectorSource.getFeatures().find(f => f.getId() === featureId || String(f.getId()) === String(featureId))) : null;
+        if (!existing && this.dynamicVectorSource) {
+          this.dynamicVectorSource.clear();
+        }
+      }
+    } else {
+      // Core layer or deselection: clear dynamic vector source
+      if (this.dynamicVectorSource) {
+        this.dynamicVectorSource.clear();
+      }
+      if (layerName && isCoreLayer && fallbackGeoJson) {
+        this.addOrUpdateWfsFeatureFromGeoJson(layerName, featureId!, fallbackGeoJson);
+      }
     }
 
     // Re-render all WFS layers to apply new styles
@@ -1127,6 +1298,18 @@ export class OpenLayersService {
     if (layerName === 'streetlights') this.streetlightsWfsLayer.setVisible(visible);
     if (layerName === 'states') this.statesWfsLayer.setVisible(visible);
     if (layerName === 'districts') this.districtsWfsLayer.setVisible(visible);
+    this.layerVisibilityListeners.forEach(l => l(layerName, visible));
+  }
+
+  onLayerVisibilityChange(listener: (layerName: string, isVisible: boolean) => void) {
+    this.layerVisibilityListeners.push(listener);
+    return () => {
+      this.layerVisibilityListeners = this.layerVisibilityListeners.filter(l => l !== listener);
+    };
+  }
+
+  isLayerVisible(layerName: string): boolean {
+    return !!this.layers[layerName]?.getVisible();
   }
 
   isFeatureVisible(layerName: string, featureId: string | number): boolean {
@@ -1208,6 +1391,27 @@ export class OpenLayersService {
   }
 
   removeWFSFeature(layerName: string, featureId: string | number) {
+    const isCoreLayer = ['streetlights', 'roads', 'zones', 'states', 'districts'].includes(layerName);
+    if (!isCoreLayer) {
+      if (this.dynamicVectorSource) {
+        const f = this.dynamicVectorSource.getFeatureById(featureId);
+        if (f) {
+          this.dynamicVectorSource.removeFeature(f);
+        } else {
+          const allFeatures = this.dynamicVectorSource.getFeatures();
+          for (const feature of allFeatures) {
+            if (feature.getId() === featureId || String(feature.getId()) === String(featureId)) {
+              this.dynamicVectorSource.removeFeature(feature);
+            }
+          }
+        }
+      }
+      if (this.selectedFeatureId === featureId || String(this.selectedFeatureId) === String(featureId)) {
+        this.setSelectedFeature(null, null);
+      }
+      return;
+    }
+
     if (layerName === 'streetlights') {
       const f = this.streetlightsWfsSource.getFeatureById(featureId);
       if (f) this.streetlightsWfsSource.removeFeature(f);
@@ -1226,9 +1430,23 @@ export class OpenLayersService {
     }
   }
 
+  clearDynamicFeatures() {
+    if (this.dynamicVectorSource) {
+      this.dynamicVectorSource.clear();
+    }
+  }
+
+  cleanupDynamicSelect() {
+    if (this.dynamicSelectKey) {
+      unByKey(this.dynamicSelectKey);
+      this.dynamicSelectKey = null;
+    }
+  }
+
   // ── Interactions ──────────────────────────────────────────────────────────────
 
   private activateInteraction(interactions: Interaction | Interaction[] | null) {
+    this.cleanupDynamicSelect();
     if (this.map) {
       this.activeInteractions.forEach(i => this.map!.removeInteraction(i));
     }
@@ -1318,12 +1536,69 @@ export class OpenLayersService {
         this.setSelectedFeature(layerName, geojsonFeature.id ?? null);
         onSelect(geojsonFeature, layerName);
       } else {
-        this.setSelectedFeature(null, null);
-        onSelect(null, '');
+        // Only clear if we didn't click on a dynamic layer
+        // We handle clearing below in the singleclick if nothing was hit
       }
     });
 
     this.activateInteraction([select]);
+
+    // Synchronously clean up previous dynamic select listener
+    this.cleanupDynamicSelect();
+
+    if (this.map) {
+      this.dynamicSelectKey = this.map.on('singleclick', async (evt) => {
+        // If the WFS select interaction handled it, don't do anything
+        if (select.getFeatures().getLength() > 0) return;
+        
+        if (!this.map) return;
+
+        const viewResolution = this.map.getView().getResolution();
+        const viewProjection = this.map.getView().getProjection();
+
+        // Check visible dynamic layers
+        let hitDynamic = false;
+        for (const [layerName, layer] of Object.entries(this.layers)) {
+          if (!['states', 'districts', 'zones', 'roads', 'streetlights'].includes(layerName) && layer.getVisible()) {
+            const source = layer.getSource();
+            if (source && (source as any).getFeatureInfoUrl) {
+              const url = (source as any).getFeatureInfoUrl(
+                evt.coordinate,
+                viewResolution,
+                viewProjection,
+                { 'INFO_FORMAT': 'application/json', 'FEATURE_COUNT': 1 }
+              );
+              
+              if (url) {
+                try {
+                  const res = await fetch(url);
+                  if (res.ok) {
+                    const data = await res.json();
+                    if (data.features && data.features.length > 0) {
+                      const selectedFeature = data.features[0];
+                      hitDynamic = true;
+                      
+                      // Highlight the temporary feature
+                      this.setSelectedFeature(layerName, selectedFeature.id, selectedFeature);
+                      onSelect(selectedFeature, layerName);
+                      break; // Only select top-most hit
+                    }
+                  }
+                } catch (err) {
+                  console.error('WMS GetFeatureInfo error:', err);
+                }
+              }
+            }
+          }
+        }
+        
+        // If neither WFS nor WMS returned a feature, clear selection
+        if (!hitDynamic && select.getFeatures().getLength() === 0) {
+           this.setSelectedFeature(null, null);
+           onSelect(null, '');
+        }
+      });
+    }
   }
 
   activateModify(
@@ -1346,10 +1621,29 @@ export class OpenLayersService {
     // Clean up any existing vertex editing session first without triggering select interaction churn
     this.teardownVertexEditState();
 
+    const isCoreLayer = ['states', 'districts', 'zones', 'roads', 'streetlights'].includes(layerName);
+
     // 1. Locate the feature in WFS layer or construct it
-    let feature = this.getWfsFeature(layerName, featureId);
-    if (!feature && initialGeoJson) {
-      feature = this.addOrUpdateWfsFeatureFromGeoJson(layerName, featureId, initialGeoJson);
+    let feature: Feature | null = null;
+    if (isCoreLayer) {
+      feature = this.getWfsFeature(layerName, featureId) || null;
+      if (!feature && initialGeoJson) {
+        feature = this.addOrUpdateWfsFeatureFromGeoJson(layerName, featureId, initialGeoJson) || null;
+      }
+    } else {
+      feature = (this.dynamicVectorSource.getFeatureById(featureId) as Feature) || null;
+      if (!feature && initialGeoJson) {
+        const rawFeature = new GeoJSON().readFeature(initialGeoJson, {
+          dataProjection: 'EPSG:4326',
+          featureProjection: 'EPSG:3857'
+        });
+        const dynamicFeat: Feature = (Array.isArray(rawFeature) ? rawFeature[0] : rawFeature) as Feature;
+        if (!dynamicFeat.getId() && featureId) {
+          dynamicFeat.setId(featureId);
+        }
+        this.dynamicVectorSource.addFeature(dynamicFeat);
+        feature = dynamicFeat;
+      }
     }
 
     if (!feature) {
@@ -1371,7 +1665,7 @@ export class OpenLayersService {
 
     // 4. Point feature (Streetlights): Position Edit behavior
     if (geomType === 'Point') {
-      const editCollection = new Collection([feature]);
+      const editCollection = new Collection<Feature>([feature]);
       feature.setStyle(
         new Style({
           image: new CircleStyle({
@@ -1475,7 +1769,7 @@ export class OpenLayersService {
 
     updateFeatureStyle();
 
-    const editFeatures = new Collection([feature]);
+    const editFeatures = new Collection<Feature>([feature!]);
     const modify = new Modify({
       features: editFeatures,
       deleteCondition: (event) => altKeyOnly(event) && singleClick(event),
@@ -1657,6 +1951,7 @@ export class OpenLayersService {
   }
 
   private teardownVertexEditState() {
+    this.cleanupDynamicSelect();
     if (this.vertexEditKeyHandler) {
       window.removeEventListener('keydown', this.vertexEditKeyHandler);
       this.vertexEditKeyHandler = null;
@@ -1688,20 +1983,29 @@ export class OpenLayersService {
     featureId?: string | number | null,
   ) {
     let targetLayer: VectorLayer<any> | null = null;
+    let initialFeature: Feature | null = null;
+    
+    const isCoreLayer = ['streetlights', 'roads', 'zones', 'states', 'districts'].includes(layerName);
+    
     if (layerName === 'streetlights') targetLayer = this.streetlightsWfsLayer;
     else if (layerName === 'roads') targetLayer = this.roadsWfsLayer;
     else if (layerName === 'zones') targetLayer = this.zonesWfsLayer;
     else if (layerName === 'states') targetLayer = this.statesWfsLayer;
     else if (layerName === 'districts') targetLayer = this.districtsWfsLayer;
+    else targetLayer = this.dynamicVectorLayer;
 
     const select = new Select({
       layers: targetLayer ? [targetLayer] : [],
       hitTolerance: 6,
     });
 
-    let initialFeature: Feature | null = null;
     if (featureId) {
-      initialFeature = this.getWfsFeature(layerName, featureId);
+      if (isCoreLayer) {
+        initialFeature = this.getWfsFeature(layerName, featureId);
+      } else {
+        initialFeature = this.dynamicVectorSource.getFeatureById(featureId);
+      }
+      
       if (initialFeature) {
         select.getFeatures().push(initialFeature);
       }
@@ -1715,8 +2019,9 @@ export class OpenLayersService {
     let originalGeometryClone: any = initialFeature?.getGeometry()?.clone() || null;
     let targetFeature: Feature | null = initialFeature;
 
-    translate.on('translatestart', (event) => {
-      const f = event.features.getArray()[0];
+    translate.on('translatestart', (event: any) => {
+      const fList = event.features?.getArray ? event.features.getArray() : (Array.isArray(event.features) ? event.features : []);
+      const f = fList[0] || targetFeature;
       if (f) {
         targetFeature = f;
         const geom = f.getGeometry();
@@ -1726,8 +2031,10 @@ export class OpenLayersService {
       }
     });
 
-    translate.on('translateend', (event) => {
-      const translatedFeature = event.features.getArray()[0] || targetFeature;
+    translate.on('translateend', (event: any) => {
+      let fList = event.features?.getArray ? event.features.getArray() : (Array.isArray(event.features) ? event.features : []);
+      if (Array.isArray(fList[0])) fList = fList[0];
+      const translatedFeature = fList[0] || targetFeature;
       if (translatedFeature) {
         const backupGeom = originalGeometryClone ? originalGeometryClone.clone() : null;
         const rollback = () => {
@@ -1749,6 +2056,7 @@ export class OpenLayersService {
   }
 
   cancelInteraction() {
+    this.cleanupDynamicSelect();
     this.activateInteraction(null);
     this.drawSource.clear();
   }
