@@ -158,6 +158,218 @@ geoserverRouter.get('/schema/:layerName', async (req, res, next) => {
   }
 });
 
+// Helper to calculate a representative centroid [lon, lat] from geometry
+function calculateCentroid(geom) {
+  if (!geom || !geom.type || !geom.coordinates) return null;
+  if (geom.type === 'Point') {
+    return Array.isArray(geom.coordinates) ? [geom.coordinates[0], geom.coordinates[1]] : null;
+  }
+  if (geom.type === 'LineString') {
+    const coords = geom.coordinates;
+    if (!coords.length) return null;
+    const mid = coords[Math.floor(coords.length / 2)];
+    return Array.isArray(mid) ? [mid[0], mid[1]] : null;
+  }
+  if (geom.type === 'MultiLineString') {
+    const line = geom.coordinates[0];
+    if (!line || !line.length) return null;
+    const mid = line[Math.floor(line.length / 2)];
+    return Array.isArray(mid) ? [mid[0], mid[1]] : null;
+  }
+  if (geom.type === 'Polygon') {
+    const ring = geom.coordinates[0];
+    if (!ring || !ring.length) return null;
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const pt of ring) {
+      if (pt[0] < minX) minX = pt[0];
+      if (pt[0] > maxX) maxX = pt[0];
+      if (pt[1] < minY) minY = pt[1];
+      if (pt[1] > maxY) maxY = pt[1];
+    }
+    return [(minX + maxX) / 2, (minY + maxY) / 2];
+  }
+  if (geom.type === 'MultiPolygon') {
+    const poly = geom.coordinates[0];
+    const ring = poly ? poly[0] : null;
+    if (!ring || !ring.length) return null;
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const pt of ring) {
+      if (pt[0] < minX) minX = pt[0];
+      if (pt[0] > maxX) maxX = pt[0];
+      if (pt[1] < minY) minY = pt[1];
+      if (pt[1] > maxY) maxY = pt[1];
+    }
+    return [(minX + maxX) / 2, (minY + maxY) / 2];
+  }
+  return null;
+}
+
+// 2B. Paginated Features Endpoint for Generic Attribute Table
+geoserverRouter.get('/layers/:layerName/features', async (req, res, next) => {
+  try {
+    const { layerName } = req.params;
+    if (!/^[A-Za-z0-9_.-]+$/.test(layerName)) {
+      return res.status(400).json({ error: 'Invalid layer name' });
+    }
+
+    const schema = await fetchSchemaInternal(layerName);
+    if (!schema) {
+      return res.status(404).json({ error: `Layer '${layerName}' schema not found` });
+    }
+
+    const page = Math.max(1, parseInt(req.query.page || '1', 10));
+    const pageSize = Math.min(500, Math.max(1, parseInt(req.query.pageSize || '25', 10)));
+    const startIndex = (page - 1) * pageSize;
+
+    const { search, sortBy, sortDirection, filterProp, filterVal } = req.query;
+
+    const authHeader = 'Basic ' + Buffer.from(`${GEOSERVER_USER}:${GEOSERVER_PASSWORD}`).toString('base64');
+    const headers = { Authorization: authHeader, Accept: 'application/json' };
+
+    // Build safe CQL filter
+    const cqlParts = [];
+
+    // Search filter across prioritized text columns in schema (max 6 to prevent 414 URI overflow)
+    if (search && typeof search === 'string' && search.trim()) {
+      const sanitizedSearch = search.trim().replace(/'/g, "''").replace(/[%_\\]/g, '');
+      if (sanitizedSearch) {
+        const textProps = schema.properties.filter(p => 
+          !p.type.startsWith('gml:') && 
+          !p.localType.toLowerCase().includes('polygon') && 
+          !p.localType.toLowerCase().includes('point') && 
+          !p.localType.toLowerCase().includes('line') &&
+          (p.localType === 'string' || p.type.includes('string') || p.type.includes('varchar'))
+        );
+
+        // Prioritize common human-readable text columns
+        const priorityKeywords = ['name', 'title', 'admin', 'sovereignt', 'district', 'state', 'category', 'status', 'type', 'zone'];
+        let matchedProps = textProps.filter(p => 
+          priorityKeywords.some(kw => p.name.toLowerCase().includes(kw))
+        );
+
+        if (matchedProps.length === 0) {
+          matchedProps = textProps.slice(0, 5);
+        } else {
+          matchedProps = matchedProps.slice(0, 6);
+        }
+
+        if (matchedProps.length > 0) {
+          const searchClause = matchedProps.map(p => `strToLowerCase(${p.name}) LIKE '%${sanitizedSearch.toLowerCase()}%'`).join(' OR ');
+          cqlParts.push(`(${searchClause})`);
+        }
+      }
+    }
+
+    // Property-specific filter
+    if (filterProp && filterVal !== undefined && filterVal !== '') {
+      const inSchema = schema.properties.find(p => p.name === filterProp);
+      if (inSchema) {
+        const sanitizedVal = String(filterVal).replace(/'/g, "''");
+        cqlParts.push(`${filterProp} = '${sanitizedVal}'`);
+      }
+    }
+
+    const cqlFilter = cqlParts.length > 0 ? cqlParts.join(' AND ') : null;
+
+    // Validate sortBy
+    let sortClause = null;
+    if (sortBy && typeof sortBy === 'string') {
+      const inSchema = schema.properties.find(p => p.name === sortBy);
+      if (inSchema) {
+        const dir = (String(sortDirection || 'ASC').toUpperCase() === 'DESC') ? 'D' : 'A';
+        sortClause = `${sortBy} ${dir}`;
+      }
+    }
+
+    // GeoServer requires a sort order when using startIndex on views/tables without explicit primary keys
+    if (!sortClause) {
+      const nonGeomProps = schema.properties.filter(p => 
+        !p.type.startsWith('gml:') && 
+        !p.localType?.toLowerCase().includes('polygon') && 
+        !p.localType?.toLowerCase().includes('point') && 
+        !p.localType?.toLowerCase().includes('line')
+      );
+      const defaultSortProp = nonGeomProps.find(p => ['id', 'gid', 'fid', 'code', 'name'].includes(p.name.toLowerCase())) || nonGeomProps[0];
+      if (defaultSortProp) {
+        sortClause = `${defaultSortProp.name} A`;
+      }
+    }
+
+    // 1. Query total matching count using resultType=hits
+    let totalFeatures = 0;
+    try {
+      let hitsUrl = `${GEOSERVER_URL}/${WORKSPACE}/ows?service=WFS&version=1.1.0&request=GetFeature&typeName=${WORKSPACE}:${layerName}&resultType=hits`;
+      if (cqlFilter) {
+        hitsUrl += `&cql_filter=${encodeURIComponent(cqlFilter)}`;
+      }
+      const hitsRes = await fetch(hitsUrl, { headers });
+      if (hitsRes.ok) {
+        const hitsText = await hitsRes.text();
+        const countMatch = hitsText.match(/numberOfFeatures="(\d+)"/i) || hitsText.match(/numberMatched="(\d+)"/i);
+        if (countMatch) {
+          totalFeatures = parseInt(countMatch[1], 10);
+        }
+      }
+    } catch (err) {
+      console.warn('[GeoServer] Hits count query failed, will fallback to features count:', err.message);
+    }
+
+    // 2. Query paginated features
+    let getUrl = `${GEOSERVER_URL}/${WORKSPACE}/ows?service=WFS&version=1.1.0&request=GetFeature&typeName=${WORKSPACE}:${layerName}&outputFormat=application/json&srsname=EPSG:4326&startIndex=${startIndex}&maxFeatures=${pageSize}`;
+    if (cqlFilter) {
+      getUrl += `&cql_filter=${encodeURIComponent(cqlFilter)}`;
+    }
+    if (sortClause) {
+      getUrl += `&sortBy=${encodeURIComponent(sortClause)}`;
+    }
+
+    const dataRes = await fetch(getUrl, { headers });
+    const responseText = await dataRes.text();
+
+    if (!dataRes.ok || responseText.includes('<ows:ExceptionReport') || responseText.includes('<ServiceExceptionReport')) {
+      const exceptionMatch = responseText.match(/<ows:ExceptionText>(.*?)<\/ows:ExceptionText>/s) || responseText.match(/<ServiceException>(.*?)<\/ServiceException>/s);
+      const errMsg = exceptionMatch ? exceptionMatch[1].trim() : `GeoServer GetFeature error (HTTP ${dataRes.status})`;
+      throw new Error(errMsg);
+    }
+
+    const featureCollection = JSON.parse(responseText);
+    const rawFeatures = featureCollection.features || [];
+
+    if (!totalFeatures && featureCollection.totalFeatures !== undefined) {
+      totalFeatures = featureCollection.totalFeatures;
+    } else if (!totalFeatures && !cqlFilter) {
+      totalFeatures = rawFeatures.length;
+    }
+
+    const totalPages = Math.ceil(totalFeatures / pageSize) || 1;
+
+    const formattedFeatures = rawFeatures.map(f => {
+      const geom = f.geometry;
+      const centroid = calculateCentroid(geom);
+      return {
+        id: f.id,
+        properties: f.properties || {},
+        geometry: geom,
+        geomType: geom?.type || 'Unknown',
+        centroid: centroid,
+      };
+    });
+
+    res.json({
+      layerName,
+      page,
+      pageSize,
+      totalFeatures,
+      totalPages,
+      schema,
+      features: formattedFeatures
+    });
+  } catch (error) {
+    console.error(`[GeoServer] features fetch for ${req.params.layerName} failed:`, error);
+    res.status(500).json({ error: error.message || 'Failed to fetch features' });
+  }
+});
+
 // Helper to format coordinates into GML posList (longitude latitude in EPSG:4326 for WFS 1.1.0)
 function formatPosList(coords) {
   return coords.map(c => `${c[0]} ${c[1]}`).join(' ');

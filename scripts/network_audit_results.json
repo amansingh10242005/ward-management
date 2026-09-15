@@ -1,0 +1,570 @@
+{
+  "timestamp": "2026-09-15T13:32:07.321Z",
+  "summary": {
+    "totalTests": 40,
+    "passed": 39,
+    "failed": 1,
+    "verdict": "NETWORK AUDIT — FAIL"
+  },
+  "coldCache": {
+    "totalRequests": 153,
+    "apiRequests": 1,
+    "wmsTiles": 0,
+    "wfsFeatures": 0,
+    "legends": 0,
+    "baseTiles": 20,
+    "fonts": 6,
+    "staticAssets": 126,
+    "transferredBytes": 4498970,
+    "resourceBytes": 4575315
+  },
+  "warmCache": {
+    "totalRequests": 163,
+    "apiRequests": 1,
+    "wmsTiles": 0,
+    "wfsFeatures": 0,
+    "legends": 0,
+    "baseTiles": 29,
+    "fonts": 7,
+    "staticAssets": 126,
+    "transferredBytes": 132440,
+    "resourceBytes": 4801515
+  },
+  "budgetSummary": [
+    {
+      "action": "Initial Discovery (/api/geoserver/layers)",
+      "budget": 1,
+      "actual": 1,
+      "verdict": "PASS"
+    },
+    {
+      "action": "Idle 60s Application Traffic",
+      "budget": 0,
+      "actual": 0,
+      "verdict": "PASS"
+    },
+    {
+      "action": "Idle 60s API Polling",
+      "budget": 0,
+      "actual": 0,
+      "verdict": "PASS"
+    },
+    {
+      "action": "DescribeFeatureType Schema Cache Misses",
+      "budget": 1,
+      "actual": 1,
+      "verdict": "PASS"
+    },
+    {
+      "action": "Single-Field Attribute Edit Mutations",
+      "budget": 1,
+      "actual": 1,
+      "verdict": "PASS"
+    },
+    {
+      "action": "Multi-Field Attribute Edit Mutations",
+      "budget": 1,
+      "actual": 1,
+      "verdict": "PASS"
+    },
+    {
+      "action": "Dynamic Vertex Edit Mutations",
+      "budget": 1,
+      "actual": 1,
+      "verdict": "PASS"
+    },
+    {
+      "action": "Dynamic Move Mutations",
+      "budget": 1,
+      "actual": 1,
+      "verdict": "PASS"
+    },
+    {
+      "action": "Dynamic Delete Mutations",
+      "budget": 1,
+      "actual": 1,
+      "verdict": "PASS"
+    },
+    {
+      "action": "In-Session Local Undo Mutations",
+      "budget": 0,
+      "actual": 0,
+      "verdict": "PASS"
+    },
+    {
+      "action": "In-Session Local Redo Mutations",
+      "budget": 0,
+      "actual": 0,
+      "verdict": "PASS"
+    },
+    {
+      "action": "Attribute Table Open Features Retrieved",
+      "budget": 25,
+      "actual": 25,
+      "verdict": "PASS"
+    },
+    {
+      "action": "Attribute Table Search Debounced Calls",
+      "budget": 1,
+      "actual": 1,
+      "verdict": "PASS"
+    },
+    {
+      "action": "Basemap Switch API / WFS Mutations",
+      "budget": 0,
+      "actual": 0,
+      "verdict": "PASS"
+    }
+  ],
+  "testResults": [
+    {
+      "id": "NET.1",
+      "name": "Initial load request inventory (Cold Cache)",
+      "passed": true,
+      "details": {
+        "total": 153,
+        "api": 1,
+        "gisWms": 0,
+        "gisWfs": 0,
+        "gisLegend": 0,
+        "mapTiles": 20,
+        "fonts": 6,
+        "static": 126,
+        "transferredBytes": 4498970,
+        "resourceBytes": 4575315
+      }
+    },
+    {
+      "id": "NET.2",
+      "name": "Idle 10-second request count (zero unexpected requests)",
+      "passed": true,
+      "details": {
+        "requests": 0
+      }
+    },
+    {
+      "id": "NET.3",
+      "name": "Idle 30-second request count (zero unexpected requests)",
+      "passed": true,
+      "details": {
+        "requests": 0
+      }
+    },
+    {
+      "id": "NET.4",
+      "name": "Idle 60-second request count (zero unexpected requests)",
+      "passed": true,
+      "details": {
+        "requests": 0
+      }
+    },
+    {
+      "id": "NET.34",
+      "name": "No idle API polling across 60 seconds of idle state",
+      "passed": true,
+      "details": {
+        "apiRequests": 0
+      }
+    },
+    {
+      "id": "NET.5",
+      "name": "Layer discovery request count during startup (exactly 1 call)",
+      "passed": true,
+      "details": {
+        "discoveryCount": 1,
+        "urls": [
+          "http://localhost:5173/api/geoserver/layers"
+        ]
+      }
+    },
+    {
+      "id": "NET.6",
+      "name": "Repeated component mount/unmount discovery audit (0 additional calls)",
+      "passed": true,
+      "details": {
+        "additionalRequests": 0
+      }
+    },
+    {
+      "id": "NET.7",
+      "name": "DescribeFeatureType caching (1st call = 1 request, 2nd call = 0 requests)",
+      "passed": true,
+      "details": {
+        "call1Requests": 1,
+        "call2Requests": 0
+      }
+    },
+    {
+      "id": "NET.9",
+      "name": "Layer ON request audit (only required WMS tiles and 1 legend graphic; 0 WFS)",
+      "passed": false,
+      "details": {
+        "wmsTiles": 0,
+        "legends": 0,
+        "wfsCalls": 0
+      }
+    },
+    {
+      "id": "NET.8",
+      "name": "Legend request caching (only affected visible layer requested)",
+      "passed": true,
+      "details": {
+        "legendRequests": 0
+      }
+    },
+    {
+      "id": "NET.10",
+      "name": "Layer OFF request audit (0 new WMS tiles, 0 API calls)",
+      "passed": true,
+      "details": {
+        "offRequests": 0,
+        "offTiles": 0
+      }
+    },
+    {
+      "id": "NET.11",
+      "name": "Pan request audit (only viewport map/WMS tiles; 0 API, 0 WFS-T)",
+      "passed": true,
+      "details": {
+        "total": 0,
+        "api": 0,
+        "wfst": 0,
+        "tiles": 0
+      }
+    },
+    {
+      "id": "NET.12",
+      "name": "Zoom request audit (only resolution map/WMS tiles; 0 API, 0 WFS-T)",
+      "passed": true,
+      "details": {
+        "total": 15,
+        "api": 0,
+        "wfst": 0,
+        "tiles": 15
+      }
+    },
+    {
+      "id": "NET.13",
+      "name": "Feature selection request audit (client vector click = 0 WFS, 0 API calls)",
+      "passed": true,
+      "details": {
+        "requests": 0,
+        "api": 0,
+        "wfs": 0
+      }
+    },
+    {
+      "id": "NET.14",
+      "name": "Feature Info request audit (bounded to at most 1 GetFeatureInfo on click)",
+      "passed": true,
+      "details": {
+        "getFeatureInfoCalls": 0
+      }
+    },
+    {
+      "id": "NET.15",
+      "name": "Dynamic single-field edit request audit (exactly 1 mutation request)",
+      "passed": true,
+      "details": {
+        "mutationCalls": 1
+      }
+    },
+    {
+      "id": "NET.16",
+      "name": "Dynamic multi-field edit request audit (exactly 1 mutation request)",
+      "passed": true,
+      "details": {
+        "mutationCalls": 1
+      }
+    },
+    {
+      "id": "NET.22",
+      "name": "Local in-session Undo request audit (strictly 0 server mutations)",
+      "passed": true,
+      "details": {
+        "serverMutations": 0
+      }
+    },
+    {
+      "id": "NET.23",
+      "name": "Local in-session Redo request audit (strictly 0 server mutations)",
+      "passed": true,
+      "details": {
+        "serverMutations": 0
+      }
+    },
+    {
+      "id": "NET.18",
+      "name": "Dynamic vertex edit request audit (exactly 1 WFS-T Update on finish)",
+      "passed": true,
+      "details": {
+        "mutations": 1
+      }
+    },
+    {
+      "id": "NET.24",
+      "name": "Finish edit request audit (exactly 1 final server mutation)",
+      "passed": true,
+      "details": {
+        "mutations": 1
+      }
+    },
+    {
+      "id": "NET.17",
+      "name": "Dynamic move request audit (exactly 1 WFS-T Update on save)",
+      "passed": true,
+      "details": {
+        "mutations": 1
+      }
+    },
+    {
+      "id": "NET.19",
+      "name": "Dynamic delete request audit (exactly 1 WFS-T Delete)",
+      "passed": true,
+      "details": {
+        "mutations": 1
+      }
+    },
+    {
+      "id": "NET.20",
+      "name": "Post-commit Undo request audit (exactly 1 inverse transaction)",
+      "passed": true,
+      "details": {
+        "mutations": 1
+      }
+    },
+    {
+      "id": "NET.21",
+      "name": "Post-commit Redo request audit (exactly 1 forward transaction)",
+      "passed": true,
+      "details": {
+        "simulated": 1
+      }
+    },
+    {
+      "id": "NET.25",
+      "name": "Attribute Table open request audit (1 paginated data request, 0 separate schema call)",
+      "passed": true,
+      "details": {
+        "apiCalls": 1,
+        "returnedFeatures": 25,
+        "totalFeatures": 742
+      }
+    },
+    {
+      "id": "NET.36",
+      "name": "No full-layer WFS on table open (returns bounded 25 records, not all 742 features)",
+      "passed": true,
+      "details": {
+        "returnedFeatures": 25,
+        "totalFeatures": 742
+      }
+    },
+    {
+      "id": "NET.26",
+      "name": "Attribute Table pagination request audit (exactly 1 request for page 2)",
+      "passed": true,
+      "details": {
+        "apiCalls": 1,
+        "page": 2
+      }
+    },
+    {
+      "id": "NET.27",
+      "name": "Attribute Table search request audit (1 debounced request with query filter)",
+      "passed": true,
+      "details": {
+        "apiCalls": 1,
+        "matchedFeatures": 1
+      }
+    },
+    {
+      "id": "NET.28",
+      "name": "Attribute Table sorting request audit (1 sorted data request)",
+      "passed": true,
+      "details": {
+        "apiCalls": 1
+      }
+    },
+    {
+      "id": "NET.29",
+      "name": "Basemap switch request audit (only base-map tiles; 0 API, 0 WFS mutations)",
+      "passed": true,
+      "details": {
+        "total": 20,
+        "api": 0,
+        "wfs": 0,
+        "tiles": 20
+      }
+    },
+    {
+      "id": "NET.30",
+      "name": "Event-listener duplication audit (listeners cleanly replaced/unkeyed)",
+      "passed": true,
+      "details": {
+        "listenerCounts": {
+          "change:layergroup": 1,
+          "change:view": 1,
+          "change:size": 1,
+          "change:target": 1,
+          "pointermove": 2,
+          "movestart": 1,
+          "moveend": 1,
+          "singleclick": 1
+        }
+      }
+    },
+    {
+      "id": "NET.31",
+      "name": "Repeated layer switching audit (no request runaway during churn)",
+      "passed": true,
+      "details": {
+        "churnRequests": 40
+      }
+    },
+    {
+      "id": "NET.32",
+      "name": "Repeated edit-session audit (interactions torn down without leaks)",
+      "passed": true,
+      "details": {
+        "tornDown": true
+      }
+    },
+    {
+      "id": "NET.33",
+      "name": "Repeated table open/close audit (requests strictly user-action triggered)",
+      "passed": true,
+      "details": {
+        "verified": true
+      }
+    },
+    {
+      "id": "NET.35",
+      "name": "No duplicate mutation (all mutations executed exactly once per user intent)",
+      "passed": true,
+      "details": {
+        "totalMutationsCaptured": 6
+      }
+    },
+    {
+      "id": "NET.37",
+      "name": "No unexpected WFS GetFeature during mutation/history execution",
+      "passed": true,
+      "details": {
+        "unexpectedCount": 0
+      }
+    },
+    {
+      "id": "NET.38",
+      "name": "No credential exposure (no passwords, basic auth, or tokens in client requests)",
+      "passed": true,
+      "details": {
+        "leaksFound": 0,
+        "details": []
+      }
+    },
+    {
+      "id": "NET.39",
+      "name": "Console audit (0 uncaught JS exceptions, 0 unexpected console errors)",
+      "passed": true,
+      "details": {
+        "exceptions": 0,
+        "severeConsoleErrors": 0,
+        "messages": []
+      }
+    },
+    {
+      "id": "NET.40",
+      "name": "Final request-budget summary (all operational budgets met)",
+      "passed": true,
+      "details": {
+        "budgetSummary": [
+          {
+            "action": "Initial Discovery (/api/geoserver/layers)",
+            "budget": 1,
+            "actual": 1,
+            "verdict": "PASS"
+          },
+          {
+            "action": "Idle 60s Application Traffic",
+            "budget": 0,
+            "actual": 0,
+            "verdict": "PASS"
+          },
+          {
+            "action": "Idle 60s API Polling",
+            "budget": 0,
+            "actual": 0,
+            "verdict": "PASS"
+          },
+          {
+            "action": "DescribeFeatureType Schema Cache Misses",
+            "budget": 1,
+            "actual": 1,
+            "verdict": "PASS"
+          },
+          {
+            "action": "Single-Field Attribute Edit Mutations",
+            "budget": 1,
+            "actual": 1,
+            "verdict": "PASS"
+          },
+          {
+            "action": "Multi-Field Attribute Edit Mutations",
+            "budget": 1,
+            "actual": 1,
+            "verdict": "PASS"
+          },
+          {
+            "action": "Dynamic Vertex Edit Mutations",
+            "budget": 1,
+            "actual": 1,
+            "verdict": "PASS"
+          },
+          {
+            "action": "Dynamic Move Mutations",
+            "budget": 1,
+            "actual": 1,
+            "verdict": "PASS"
+          },
+          {
+            "action": "Dynamic Delete Mutations",
+            "budget": 1,
+            "actual": 1,
+            "verdict": "PASS"
+          },
+          {
+            "action": "In-Session Local Undo Mutations",
+            "budget": 0,
+            "actual": 0,
+            "verdict": "PASS"
+          },
+          {
+            "action": "In-Session Local Redo Mutations",
+            "budget": 0,
+            "actual": 0,
+            "verdict": "PASS"
+          },
+          {
+            "action": "Attribute Table Open Features Retrieved",
+            "budget": 25,
+            "actual": 25,
+            "verdict": "PASS"
+          },
+          {
+            "action": "Attribute Table Search Debounced Calls",
+            "budget": 1,
+            "actual": 1,
+            "verdict": "PASS"
+          },
+          {
+            "action": "Basemap Switch API / WFS Mutations",
+            "budget": 0,
+            "actual": 0,
+            "verdict": "PASS"
+          }
+        ]
+      }
+    }
+  ]
+}

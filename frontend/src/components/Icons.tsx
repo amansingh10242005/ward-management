@@ -311,12 +311,6 @@ export const IconFocus = (props: React.SVGProps<SVGSVGElement>) => (
   </SVG>
 );
 
-export const IconZoomLayer = (props: React.SVGProps<SVGSVGElement>) => (
-  <SVG {...props}>
-    <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
-  </SVG>
-);
-
 export const IconUndo = (props: React.SVGProps<SVGSVGElement>) => (
   <SVG {...props}>
     <path d="M3 7v6h6" />
@@ -328,6 +322,57 @@ export const IconRedo = (props: React.SVGProps<SVGSVGElement>) => (
   <SVG {...props}>
     <path d="M21 7v6h-6" />
     <path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13" />
+  </SVG>
+);
+
+export const IconTable = (props: React.SVGProps<SVGSVGElement>) => (
+  <SVG {...props}>
+    <rect width="18" height="18" x="3" y="3" rx="2" />
+    <path d="M3 9h18" />
+    <path d="M3 15h18" />
+    <path d="M9 3v18" />
+    <path d="M15 3v18" />
+  </SVG>
+);
+
+export const IconDownload = (props: React.SVGProps<SVGSVGElement>) => (
+  <SVG {...props}>
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+    <polyline points="7 10 12 15 17 10" />
+    <line x1="12" y1="15" x2="12" y2="3" />
+  </SVG>
+);
+
+export const IconFilter = (props: React.SVGProps<SVGSVGElement>) => (
+  <SVG {...props}>
+    <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+  </SVG>
+);
+
+export const IconSortAsc = (props: React.SVGProps<SVGSVGElement>) => (
+  <SVG {...props}>
+    <path d="m3 8 4-4 4 4" />
+    <path d="M7 4v16" />
+    <path d="M15 4h5" />
+    <path d="M15 10h3" />
+    <path d="M15 16h2" />
+  </SVG>
+);
+
+export const IconSortDesc = (props: React.SVGProps<SVGSVGElement>) => (
+  <SVG {...props}>
+    <path d="m3 16 4 4 4-4" />
+    <path d="M7 20V4" />
+    <path d="M15 4h5" />
+    <path d="M15 10h3" />
+    <path d="M15 16h2" />
+  </SVG>
+);
+
+export const IconX = (props: React.SVGProps<SVGSVGElement>) => (
+  <SVG {...props}>
+    <path d="M18 6 6 18" />
+    <path d="m6 6 12 12" />
   </SVG>
 );
 

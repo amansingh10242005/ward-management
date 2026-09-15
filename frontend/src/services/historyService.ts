@@ -133,7 +133,9 @@ class HistoryService {
 
     try {
       if (entry.isCore) {
-        const rawId = parseFeatureId(entry.currentFeatureId);
+        const rawId = (entry.before.properties?.id != null && !isNaN(Number(entry.before.properties.id)))
+          ? entry.before.properties.id
+          : (parseFeatureId(entry.currentFeatureId) ?? entry.currentFeatureId);
 
         if (entry.operationType === 'update' || entry.operationType === 'move' || entry.operationType === 'vertex') {
           const payload = {
@@ -277,7 +279,9 @@ class HistoryService {
 
     try {
       if (entry.isCore) {
-        const rawId = parseFeatureId(entry.currentFeatureId);
+        const rawId = (entry.after.properties?.id != null && !isNaN(Number(entry.after.properties.id)))
+          ? entry.after.properties.id
+          : (parseFeatureId(entry.currentFeatureId) ?? entry.currentFeatureId);
 
         if (entry.operationType === 'update' || entry.operationType === 'move' || entry.operationType === 'vertex') {
           const payload = {

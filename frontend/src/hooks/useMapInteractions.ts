@@ -4,6 +4,7 @@ import { apiClient } from '../lib/api';
 import { parseFeatureId } from '../utils/featureUtils';
 import { validateGeometry } from '../utils/geometryValidation';
 import { historyService } from '../services/historyService';
+import { editSessionHistory } from '../services/editSessionHistory';
 
 export type Mode = 'idle' | 'create' | 'edit' | 'move' | 'vertex_edit';
 export type ActiveLayer = 'streetlights' | 'roads' | 'zones' | 'states' | 'districts' | string | null;
@@ -163,6 +164,18 @@ export function useMapInteractions() {
           setSelectedZoneFeature({ id: zoneId, properties: { name: zoneProps?.name || `Zone ${zoneId}` } });
         }
       }
+
+      // Always zoom to the selected feature when clicked on map
+      olService.centerOnFeature(layerName, geojsonFeature.id, geojsonFeature).then((resolved) => {
+        if (resolved?.geometry) {
+          setSelectedFeature((prev: any) => {
+            if (!prev || String(prev.id) === String(geojsonFeature.id)) {
+              return { ...prev, ...resolved, geometry: resolved.geometry, properties: { ...(prev?.properties || {}), ...(resolved.properties || {}) } };
+            }
+            return prev;
+          });
+        }
+      }).catch(() => {});
     } else {
       setSelectedFeature(null);
       setActiveLayer(null);
@@ -192,9 +205,18 @@ export function useMapInteractions() {
     }
     olService.setSelectedFeature(null, null);
     olService.clearDynamicFeatures();
-    setSelectedFeature(null);
-    setActiveLayer(null);
     setMode('idle');
+  }, [mode]);
+
+  const deselectFeature = useCallback(() => {
+    if (mode === 'vertex_edit') {
+      olService.cancelVertexEdit();
+    }
+    setSelectedFeature(null);
+    olService.setSelectedFeature(null, null);
+    if (mode !== 'idle') {
+      setMode('idle');
+    }
   }, [mode]);
 
   const startDrawingStreetlight = useCallback(() => {
@@ -329,7 +351,8 @@ export function useMapInteractions() {
           setMode('edit');
         }
       },
-      fid
+      fid,
+      selectedFeature
     );
   }, [activeLayer, selectedFeature]);
 
@@ -369,6 +392,15 @@ export function useMapInteractions() {
     if (!selectedFeature || !activeLayer) return;
     setIsSavingVertex(true);
     setVertexEditError(null);
+
+    // Phase 10: If user undid back to original geometry and clicked Finish,
+    // detect no net change and exit cleanly without issuing an unnecessary server update
+    if (!editSessionHistory.hasNetChanges()) {
+      olService.finishVertexEdit();
+      setIsSavingVertex(false);
+      setMode('edit');
+      return;
+    }
 
     const beforeGeom = selectedFeature?.geometry ? JSON.parse(JSON.stringify(selectedFeature.geometry)) : null;
     const beforeProps = selectedFeature?.properties ? JSON.parse(JSON.stringify(selectedFeature.properties)) : {};
@@ -470,20 +502,43 @@ export function useMapInteractions() {
     setIsSavingVertex(false);
   }, []);
 
-  const zoomToFeature = useCallback(() => {
+  const zoomToFeature = useCallback(async () => {
     if (selectedFeature && activeLayer) {
-      olService.centerOnFeature(activeLayer, selectedFeature.id, selectedFeature);
+      const resolved = await olService.centerOnFeature(activeLayer, selectedFeature.id, selectedFeature);
+      if (resolved && resolved.geometry) {
+        setSelectedFeature((prev: any) => ({
+          ...prev,
+          ...resolved,
+          geometry: resolved.geometry,
+          properties: { ...(prev?.properties || {}), ...(resolved.properties || {}) },
+        }));
+      }
     }
   }, [selectedFeature, activeLayer]);
 
-  const zoomToLayer = useCallback((layerName?: string) => {
-    const target = layerName || activeLayer;
-    if (target) {
-      olService.zoomToLayer(target);
-    }
-  }, [activeLayer]);
-
   const handleUndo = useCallback(async () => {
+    if (editSessionHistory.isActive()) {
+      const type = editSessionHistory.getSessionType();
+      if (type === 'vertex_edit') {
+        const ok = olService.undoVertexEdit();
+        if (ok) {
+          const curGeom = olService.getVertexEditCurrentGeometry();
+          if (curGeom) {
+            setCurrentVertexGeometry(curGeom);
+            setSelectedFeature((prev: any) => prev ? { ...prev, geometry: curGeom } : prev);
+          }
+        }
+        return { success: true };
+      }
+      if (type === 'create') {
+        const ok = olService.undoDrawPoint();
+        return { success: ok };
+      }
+      if (type === 'move') {
+        const ok = olService.undoMove();
+        return { success: ok };
+      }
+    }
     return await historyService.undo({
       onSelectionChange: (feature, layerName) => {
         setSelectedFeature(feature);
@@ -496,6 +551,28 @@ export function useMapInteractions() {
   }, []);
 
   const handleRedo = useCallback(async () => {
+    if (editSessionHistory.isActive()) {
+      const type = editSessionHistory.getSessionType();
+      if (type === 'vertex_edit') {
+        const ok = olService.redoVertexEdit();
+        if (ok) {
+          const curGeom = olService.getVertexEditCurrentGeometry();
+          if (curGeom) {
+            setCurrentVertexGeometry(curGeom);
+            setSelectedFeature((prev: any) => prev ? { ...prev, geometry: curGeom } : prev);
+          }
+        }
+        return { success: true };
+      }
+      if (type === 'create') {
+        const ok = olService.redoDrawPoint();
+        return { success: ok };
+      }
+      if (type === 'move') {
+        const ok = olService.redoMove();
+        return { success: ok };
+      }
+    }
     return await historyService.redo({
       onSelectionChange: (feature, layerName) => {
         setSelectedFeature(feature);
@@ -523,10 +600,11 @@ export function useMapInteractions() {
     handleFormSuccess,
     handleMoveStart,
     handleSelectFeature: handleSelectFeatureList,
+    onSelectFeature: onSelectFeatureCallback,
+    deselectFeature,
 
     // Spatial Navigation exports
     zoomToFeature,
-    zoomToLayer,
 
     // Vertex Edit exports
     startVertexEdit,

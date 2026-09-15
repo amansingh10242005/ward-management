@@ -9,9 +9,9 @@ interface LayerControlProps {
 
 export default function LayerControl({ activeLayer, setActiveLayer }: LayerControlProps) {
   const [layers, setLayers] = useState({
-    streetlights: true,
-    roads: true,
-    zones: true,
+    streetlights: false,
+    roads: false,
+    zones: false,
     states: false,
     districts: false,
   });

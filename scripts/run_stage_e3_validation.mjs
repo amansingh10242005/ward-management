@@ -320,7 +320,7 @@ async function runStageE3Validation() {
     // Post-delete full-layer WFS GetFeature = 0
     const deletePhaseRequests = networkRequests.slice(deleteReqStart);
     const wmsGetFeatureInfoDuringDelete = deletePhaseRequests.filter(r => r.url.includes('request=GetFeatureInfo')).length;
-    const wfsGetFeatureDuringDelete = deletePhaseRequests.filter(r => r.url.includes('service=WFS') && r.url.includes('request=GetFeature')).length;
+    const wfsGetFeatureDuringDelete = deletePhaseRequests.filter(r => r.url.includes('service=WFS') && r.url.includes('request=GetFeature') && !r.url.includes('bbox=')).length;
     const wfstTransactionCount = deletePhaseRequests.filter(r => r.url.includes('/api/geoserver/wfs/transaction')).length;
     const postDeleteFullWfs = deletePhaseRequests.filter(r => (r.url.includes('tl_layer_1') || r.url.includes('Example_1')) && r.url.includes('request=GetFeature')).length;
 

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { olService } from '../lib/openlayers';
 import { IconSearch } from './Icons';
+import { parseFeatureId } from '../utils/featureUtils';
 
 interface FeatureListProps {
   activeLayer: 'streetlights' | 'roads' | 'zones' | 'states' | 'districts';
@@ -25,7 +26,7 @@ export default function FeatureList({ activeLayer, selectedFeature, onSelectFeat
     setLoading(true);
     try {
       const f = await olService.searchFeaturesFromBackend(activeLayer, search, controller.signal);
-      setFeatures(f);
+      setFeatures(f.features || (Array.isArray(f) ? f : []));
     } catch (e: any) {
       if (e?.name !== 'AbortError') {
         console.error(e);
@@ -63,8 +64,8 @@ export default function FeatureList({ activeLayer, selectedFeature, onSelectFeat
   const getFeatureDisplay = (f: any) => {
     const props = f.properties || {};
     switch (activeLayer) {
-      case 'states': return { primary: props.state || props.STATE || props.state_name || `State ${f.id}`, secondary: props.state_lgd ? `LGD: ${props.state_lgd}` : (props.state_code ? `Code: ${props.state_code}` : `ID: ${f.id}`) };
-      case 'districts': return { primary: props.district || props.District || props.district_name || `District ${f.id}`, secondary: (props.state || props.State) ? `State: ${props.state || props.State}` : `ID: ${f.id}` };
+      case 'states': return { primary: props.STATE || props.state || props.state_name || `State ${f.id}`, secondary: (props.STATE_LGD || props.state_lgd) ? `LGD: ${props.STATE_LGD || props.state_lgd}` : (props.state_code ? `Code: ${props.state_code}` : `ID: ${f.id}`) };
+      case 'districts': return { primary: props.District || props.district || props.district_name || `District ${f.id}`, secondary: (props.STATE || props.state || props.State) ? `State: ${props.STATE || props.state || props.State}` : (props.DISTRICT_L ? `LGD: ${props.DISTRICT_L}` : `ID: ${f.id}`) };
       case 'zones': return { primary: props.name || `Zone ${f.id}`, secondary: props.type ? `Type: ${props.type}` : `ID: ${f.id}` };
       case 'roads': return { primary: props.name || `Road ${f.id}`, secondary: props.zone_id ? `Zone ID: ${props.zone_id}` : `ID: ${f.id}` };
       case 'streetlights': return { primary: props.name || props.identifier || `Streetlight ${f.id}`, secondary: props.road_id ? `Road ID: ${props.road_id}` : `ID: ${f.id}` };
@@ -100,7 +101,11 @@ export default function FeatureList({ activeLayer, selectedFeature, onSelectFeat
           </div>
         ) : (
           filteredFeatures.map(f => {
-            const isSelected = selectedFeature?.id === f.id;
+            const rawId = String(parseFeatureId(f.id) ?? f.id);
+            const selectedRawId = selectedFeature?.id ? String(parseFeatureId(selectedFeature.id) ?? selectedFeature.id) : null;
+            const isSelected = (selectedFeature?.id != null && (selectedFeature.id === f.id || String(selectedFeature.id) === String(f.id))) ||
+              (selectedRawId != null && selectedRawId === rawId) ||
+              (selectedFeature?.properties?.id != null && f.properties?.id != null && String(selectedFeature.properties.id) === String(f.properties.id));
             const { primary, secondary } = getFeatureDisplay(f);
             return (
               <div 

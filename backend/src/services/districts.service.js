@@ -5,7 +5,7 @@ import { mapRowToGeoJSONFeature } from '../utils/geojson.utils.js';
 export const districtsService = {
   async getAll(bbox) {
     let query = `
-      SELECT id, district_l AS "DISTRICT_L", district AS "District", state AS "STATE", ST_AsGeoJSON(geom) AS geom
+      SELECT id, "DISTRICT_L", "District", "STATE", ST_AsGeoJSON(geom) AS geom
       FROM districts
     `;
     const params = [];
@@ -23,6 +23,10 @@ export const districtsService = {
   },
 
   async update(id, feature) {
+    const effectiveId = (feature.properties?.id != null && !isNaN(Number(feature.properties.id)))
+      ? feature.properties.id
+      : (typeof id === 'string' && id.includes('.') ? id.split('.')[1] : id);
+
     const geoJsonStr = feature.geometry ? JSON.stringify(feature.geometry) : null;
     const districtName = feature.properties?.District || feature.properties?.name || feature.properties?.district_name;
     const stateName = feature.properties?.STATE || feature.properties?.state || feature.properties?.state_name;
@@ -41,24 +45,24 @@ export const districtsService = {
 
     const query = geoJsonStr ? `
       UPDATE districts
-      SET district = COALESCE($1, district),
-          state = COALESCE($2, state),
-          district_l = COALESCE($3, district_l),
+      SET "District" = COALESCE($1, "District"),
+          "STATE" = COALESCE($2, "STATE"),
+          "DISTRICT_L" = COALESCE($3, "DISTRICT_L"),
           geom = ST_SetSRID(ST_GeomFromGeoJSON($4), 4326)
       WHERE id = $5
-      RETURNING id, district_l AS "DISTRICT_L", district AS "District", state AS "STATE", ST_AsGeoJSON(geom) AS geom
+      RETURNING id, "DISTRICT_L", "District", "STATE", ST_AsGeoJSON(geom) AS geom
     ` : `
       UPDATE districts
-      SET district = COALESCE($1, district),
-          state = COALESCE($2, state),
-          district_l = COALESCE($3, district_l)
+      SET "District" = COALESCE($1, "District"),
+          "STATE" = COALESCE($2, "STATE"),
+          "DISTRICT_L" = COALESCE($3, "DISTRICT_L")
       WHERE id = $4
-      RETURNING id, district_l AS "DISTRICT_L", district AS "District", state AS "STATE", ST_AsGeoJSON(geom) AS geom
+      RETURNING id, "DISTRICT_L", "District", "STATE", ST_AsGeoJSON(geom) AS geom
     `;
 
     const params = geoJsonStr
-      ? [districtName, stateName, districtLgd, geoJsonStr, id]
-      : [districtName, stateName, districtLgd, id];
+      ? [districtName, stateName, districtLgd, geoJsonStr, effectiveId]
+      : [districtName, stateName, districtLgd, effectiveId];
 
     const { rows } = await pool.query(query, params);
 

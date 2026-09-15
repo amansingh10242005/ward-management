@@ -4,7 +4,7 @@ import { IconSearch, IconCirclePlus, IconEye, IconEyeOff } from './Icons';
 import { parseFeatureId } from '../utils/featureUtils';
 
 interface InlineFeatureListProps {
-  activeLayer: 'streetlights' | 'roads' | 'zones' | 'states' | 'districts';
+  activeLayer: 'streetlights' | 'roads' | 'zones' | 'states' | 'districts' | string;
   selectedFeature: any | null;
   onSelectFeature: (feature: any) => void;
   onCreateClick?: () => void;
@@ -16,12 +16,12 @@ function getFeatureDisplay(f: any, activeLayer: string) {
     case 'states':
       return {
         primary: props.state || props.STATE || props.state_name || `State ${f.id}`,
-        secondary: props.state_lgd ? `LGD: ${props.state_lgd}` : (props.state_code ? `Code: ${props.state_code}` : `ID: ${f.id}`),
+        secondary: (props.state_lgd || props.STATE_LGD) ? `LGD: ${props.state_lgd || props.STATE_LGD}` : (props.state_code ? `Code: ${props.state_code}` : `ID: ${f.id}`),
       };
     case 'districts':
       return {
         primary: props.district || props.District || props.district_name || `District ${f.id}`,
-        secondary: (props.state || props.State) ? `State: ${props.state || props.State}` : `ID: ${f.id}`,
+        secondary: (props.state || props.STATE || props.State) ? `State: ${props.state || props.STATE || props.State}` : (props.district_l || props.DISTRICT_L ? `LGD: ${props.district_l || props.DISTRICT_L}` : `ID: ${f.id}`),
       };
     case 'zones':
       return {
@@ -38,10 +38,15 @@ function getFeatureDisplay(f: any, activeLayer: string) {
         primary: props.name || props.identifier || `Streetlight ${f.id}`,
         secondary: props.road_id ? `Road ID: ${props.road_id}` : (props.type ? `Type: ${props.type}` : `ID: ${f.id}`),
       };
-    default:
-      return { primary: `Feature ${f.id}`, secondary: '' };
+    default: {
+      const primary = props.name || props.NAME || props.name_en || props.title || props.site_name || props.label || `Feature ${f.id}`;
+      const secondary = props.category || props.type || props.notes || (props.scalerank !== undefined ? `Rank: ${props.scalerank}` : '') || '';
+      return { primary: String(primary), secondary: String(secondary) };
+    }
   }
 }
+
+const PAGE_SIZE = 40;
 
 export default function InlineFeatureList({
   activeLayer,
@@ -51,13 +56,21 @@ export default function InlineFeatureList({
 }: InlineFeatureListProps) {
   const [features, setFeatures] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [totalCount, setTotalCount] = useState<number | null>(null);
   const [search, setSearch] = useState('');
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(() =>
     new Set(olService.getHiddenFeatureIds(activeLayer))
   );
+  const listContainerRef = useRef<HTMLDivElement>(null);
   const selectedRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const loadMoreAbortControllerRef = useRef<AbortController | null>(null);
   const requestSeqRef = useRef(0);
+  const featuresRef = useRef<any[]>([]);
+  featuresRef.current = features;
+  const lastScrolledSelectedIdRef = useRef<string | null>(null);
 
   // Sync hiddenIds whenever activeLayer changes
   useEffect(() => {
@@ -83,21 +96,30 @@ export default function InlineFeatureList({
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
+    if (loadMoreAbortControllerRef.current) {
+      loadMoreAbortControllerRef.current.abort();
+    }
     const controller = new AbortController();
     abortControllerRef.current = controller;
     const seq = ++requestSeqRef.current;
 
     setLoading(true);
+    setLoadingMore(false);
     try {
-      const f = await olService.searchFeaturesFromBackend(layer, searchTerm, controller.signal);
+      const res = await olService.searchFeaturesFromBackend(layer, searchTerm, controller.signal, 0, PAGE_SIZE);
       if (seq === requestSeqRef.current) {
-        setFeatures(f);
+        const items = res.features || (Array.isArray(res) ? res : []);
+        setFeatures(items);
+        setHasMore(res.hasMore ?? (items.length === PAGE_SIZE));
+        setTotalCount(res.totalCount ?? items.length);
       }
     } catch (e: any) {
       if (e?.name !== 'AbortError') {
         console.error(e);
         if (seq === requestSeqRef.current) {
           setFeatures([]);
+          setHasMore(false);
+          setTotalCount(0);
         }
       }
     } finally {
@@ -106,6 +128,58 @@ export default function InlineFeatureList({
       }
     }
   }, []);
+
+  const loadMore = useCallback(async () => {
+    if (loading || loadingMore || !hasMore) return;
+    const offset = featuresRef.current.length;
+    if (offset === 0) return;
+
+    if (loadMoreAbortControllerRef.current) {
+      loadMoreAbortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    loadMoreAbortControllerRef.current = controller;
+    const seq = requestSeqRef.current;
+
+    setLoadingMore(true);
+    try {
+      const res = await olService.searchFeaturesFromBackend(
+        activeLayer,
+        search,
+        controller.signal,
+        offset,
+        PAGE_SIZE
+      );
+      if (seq === requestSeqRef.current) {
+        const newItems = res.features || (Array.isArray(res) ? res : []);
+        setFeatures(prev => {
+          const existingIds = new Set(prev.map(f => f.id));
+          const filtered = newItems.filter((f: any) => !existingIds.has(f.id));
+          return [...prev, ...filtered];
+        });
+        setHasMore(res.hasMore ?? (newItems.length === PAGE_SIZE));
+        if (res.totalCount != null) {
+          setTotalCount(res.totalCount);
+        }
+      }
+    } catch (e: any) {
+      if (e?.name !== 'AbortError') {
+        console.error('Failed to load more features', e);
+      }
+    } finally {
+      if (seq === requestSeqRef.current) {
+        setLoadingMore(false);
+      }
+    }
+  }, [loading, loadingMore, hasMore, activeLayer, search]);
+
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+    // Trigger next page when within 180px of bottom (approx 4 rows)
+    if (scrollHeight - (scrollTop + clientHeight) < 180) {
+      loadMore();
+    }
+  };
 
   // Immediate fetch on layer switch
   useEffect(() => {
@@ -139,12 +213,26 @@ export default function InlineFeatureList({
     return cleanup;
   }, [activeLayer, search, fetchFeatures]);
 
-  // Scroll selected item into view
+  // Auto fill if list doesn't cause overflow on large displays
   useEffect(() => {
-    if (selectedFeature && selectedRef.current) {
-      selectedRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    if (!loading && !loadingMore && hasMore && listContainerRef.current) {
+      const el = listContainerRef.current;
+      if (el.scrollHeight <= el.clientHeight && features.length > 0) {
+        loadMore();
+      }
     }
-  }, [selectedFeature, features]);
+  }, [loading, loadingMore, hasMore, features.length, loadMore]);
+
+  // Scroll selected item into view ONLY when selectedFeature ID changes
+  useEffect(() => {
+    const selectedId = selectedFeature?.id ? String(selectedFeature.id) : null;
+    if (selectedId && selectedId !== lastScrolledSelectedIdRef.current && selectedRef.current) {
+      lastScrolledSelectedIdRef.current = selectedId;
+      selectedRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } else if (!selectedId) {
+      lastScrolledSelectedIdRef.current = null;
+    }
+  }, [selectedFeature]);
 
   const getCreateLabel = () => {
     switch (activeLayer) {
@@ -169,14 +257,21 @@ export default function InlineFeatureList({
           onClick={(e) => e.stopPropagation()}
         />
         {!loading && features.length > 0 && (
-          <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginLeft: 'auto', flexShrink: 0 }}>
-            {features.length}
+          <span
+            style={{ fontSize: '11px', color: 'var(--text-muted)', marginLeft: 'auto', flexShrink: 0 }}
+            title={totalCount != null ? `${features.length} loaded of ${totalCount} total` : `${features.length} features`}
+          >
+            {totalCount != null && totalCount > features.length ? `${features.length}/${totalCount}` : features.length}
           </span>
         )}
       </div>
 
       {/* Feature List */}
-      <div className="inline-feature-list">
+      <div
+        ref={listContainerRef}
+        className="inline-feature-list"
+        onScroll={handleScroll}
+      >
         {loading ? (
           <div className="inline-feature-empty">Loading {activeLayer}...</div>
         ) : features.length === 0 ? (
@@ -184,39 +279,51 @@ export default function InlineFeatureList({
             No {activeLayer}{search ? ` matching "${search}"` : ''} found.
           </div>
         ) : (
-          features.map((f) => {
-            const rawId = String(parseFeatureId(f.id) ?? f.id);
-            const isSelected = selectedFeature?.id === f.id;
-            const isVisible = !hiddenIds.has(rawId) && olService.isFeatureVisible(activeLayer, rawId);
-            const { primary, secondary } = getFeatureDisplay(f, activeLayer);
-            return (
-              <div
-                key={f.id}
-                ref={isSelected ? selectedRef : null}
-                className={`inline-feature-item ${isSelected ? 'selected' : ''} ${!isVisible ? 'dimmed' : ''}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onSelectFeature(f);
-                }}
-              >
-                <button
-                  type="button"
-                  className={`inline-feature-eye-btn ${!isVisible ? 'hidden' : ''}`}
-                  onClick={(e) => handleToggleFeature(e, f.id)}
-                  title={isVisible ? `Hide ${primary}` : `Show ${primary}`}
-                  aria-label={isVisible ? `Hide ${primary}` : `Show ${primary}`}
+          <>
+            {features.map((f) => {
+              const rawId = String(parseFeatureId(f.id) ?? f.id);
+              const selectedRawId = selectedFeature?.id ? String(parseFeatureId(selectedFeature.id) ?? selectedFeature.id) : null;
+              const isSelected = (selectedFeature?.id != null && (selectedFeature.id === f.id || String(selectedFeature.id) === String(f.id))) ||
+                (selectedRawId != null && selectedRawId === rawId) ||
+                (selectedFeature?.properties?.id != null && f.properties?.id != null && String(selectedFeature.properties.id) === String(f.properties.id));
+              const isVisible = !hiddenIds.has(rawId) && olService.isFeatureVisible(activeLayer, rawId);
+              const { primary, secondary } = getFeatureDisplay(f, activeLayer);
+              return (
+                <div
+                  key={f.id}
+                  ref={isSelected ? selectedRef : null}
+                  className={`inline-feature-item ${isSelected ? 'selected' : ''} ${!isVisible ? 'dimmed' : ''}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectFeature(f);
+                  }}
                 >
-                  {isVisible ? <IconEye width={14} height={14} /> : <IconEyeOff width={14} height={14} />}
-                </button>
-                <div className="inline-feature-text">
-                  <div className="inline-feature-primary">{primary}</div>
-                  {secondary && (
-                    <div className="inline-feature-secondary">{secondary}</div>
-                  )}
+                  <button
+                    type="button"
+                    className={`inline-feature-eye-btn ${!isVisible ? 'hidden' : ''}`}
+                    onClick={(e) => handleToggleFeature(e, f.id)}
+                    title={isVisible ? `Hide ${primary}` : `Show ${primary}`}
+                    aria-label={isVisible ? `Hide ${primary}` : `Show ${primary}`}
+                  >
+                    {isVisible ? <IconEye width={14} height={14} /> : <IconEyeOff width={14} height={14} />}
+                  </button>
+                  <div className="inline-feature-text">
+                    <div className="inline-feature-primary">{primary}</div>
+                    {secondary && (
+                      <div className="inline-feature-secondary">{secondary}</div>
+                    )}
+                  </div>
                 </div>
+              );
+            })}
+
+            {loadingMore && (
+              <div className="inline-feature-loading-more">
+                <span className="inline-feature-spinner" />
+                <span>Loading more...</span>
               </div>
-            );
-          })
+            )}
+          </>
         )}
       </div>
 

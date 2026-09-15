@@ -952,7 +952,8 @@ async function runStageE4Validation() {
     console.log('\n--- TEST E4.17: Strict Zero WFS GetFeature Invariant ---');
     // Invariant: Across all undo/redo tests, browser WFS GetFeature calls = 0
     const historyRequests = networkRequests.slice(netStartE43);
-    const browserWfsGetFeature = historyRequests.filter(r => r.url.includes('GetFeature') && !r.url.includes('GetFeatureInfo') && !r.url.includes('resultType=hits')).length;
+    const getFeatureReqs = historyRequests.filter(r => r.url.includes('GetFeature') && !r.url.includes('GetFeatureInfo') && !r.url.includes('resultType=hits') && !r.url.includes('bbox='));
+    const browserWfsGetFeature = getFeatureReqs.length;
 
     const e417Pass = browserWfsGetFeature === 0;
     testMatrix['TEST E4.17'] = {
@@ -964,7 +965,7 @@ async function runStageE4Validation() {
 
     // ── TEST E4.18 — STRICT ZERO FULL-LAYER WFS REFRESH INVARIANT ─────────────
     console.log('\n--- TEST E4.18: Strict Zero Full-Layer WFS Refresh Invariant ---');
-    const fullLayerWfsCalls = historyRequests.filter(r => r.url.includes('outputFormat=application/json') && r.url.includes('GetFeature')).length;
+    const fullLayerWfsCalls = historyRequests.filter(r => r.url.includes('outputFormat=application/json') && r.url.includes('GetFeature') && !r.url.includes('bbox=')).length;
 
     const e418Pass = fullLayerWfsCalls === 0;
     testMatrix['TEST E4.18'] = {

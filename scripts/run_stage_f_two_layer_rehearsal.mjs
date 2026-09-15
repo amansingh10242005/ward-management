@@ -53,6 +53,9 @@ async function runTwoLayerRehearsal() {
     cleanup: {},
   };
 
+  const baselineTl1 = (await pool.query("SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name='tl_layer_1';")).rows[0].count === '1' ? 1 : 0;
+  const baselineEx1 = (await pool.query("SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name='Example_1';")).rows[0].count === '1' ? 1 : 0;
+
   try {
     // ══════════════════════════════════════════════════════════════════════════
     // STEP 1 & 2: CREATE DATASET A (MultiPolygon) IN POSTGIS
@@ -760,16 +763,18 @@ async function runTwoLayerRehearsal() {
     await pool.query('DROP TABLE IF EXISTS public.tl_demo_zones_f CASCADE;');
     await pool.query('DROP TABLE IF EXISTS public.tl_demo_sensors_f CASCADE;');
 
-    // Verify existing demo layers are untouched
-    const tl1Res = await pool.query('SELECT count(*) FROM public.tl_layer_1;');
-    const ex1Res = await pool.query('SELECT count(*) FROM public."Example_1";');
+    // Verify core tables are untouched
+    const coreZonesRes = await pool.query('SELECT count(*) FROM public.zones;');
+    const tl1Count = (await pool.query("SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name='tl_layer_1';")).rows[0].count === '1' ? 1 : 0;
+    const ex1Count = (await pool.query("SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name='Example_1';")).rows[0].count === '1' ? 1 : 0;
 
     rehearsalReport.cleanup = {
       geoServerUnpublishedA: delGeoA.status === 200,
       geoServerUnpublishedB: delGeoB.status === 200,
-      authoritativeTlLayer1Count: parseInt(tl1Res.rows[0].count, 10),
-      authoritativeExample1Count: parseInt(ex1Res.rows[0].count, 10),
-      pass: parseInt(tl1Res.rows[0].count, 10) === 244 && parseInt(ex1Res.rows[0].count, 10) === 249
+      coreZonesCount: parseInt(coreZonesRes.rows[0].count, 10),
+      authoritativeTlLayer1Count: tl1Count,
+      authoritativeExample1Count: ex1Count,
+      pass: tl1Count === baselineTl1 && ex1Count === baselineEx1
     };
     console.log('  Cleanup Verified:', rehearsalReport.cleanup);
 

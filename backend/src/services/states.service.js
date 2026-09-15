@@ -5,7 +5,7 @@ import { mapRowToGeoJSONFeature } from '../utils/geojson.utils.js';
 export const statesService = {
   async getAll(bbox) {
     let query = `
-      SELECT id, state AS "STATE", state_lgd AS "State_LGD", ST_AsGeoJSON(geom) AS geom
+      SELECT id, "STATE", "State_LGD", ST_AsGeoJSON(geom) AS geom
       FROM states
     `;
     const params = [];
@@ -23,6 +23,10 @@ export const statesService = {
   },
 
   async update(id, feature) {
+    const effectiveId = (feature.properties?.id != null && !isNaN(Number(feature.properties.id)))
+      ? feature.properties.id
+      : (typeof id === 'string' && id.includes('.') ? id.split('.')[1] : id);
+
     const geoJsonStr = feature.geometry ? JSON.stringify(feature.geometry) : null;
     const stateName = feature.properties?.STATE || feature.properties?.name || feature.properties?.state_name;
     const stateLgd = feature.properties?.State_LGD || feature.properties?.state_code;
@@ -40,22 +44,22 @@ export const statesService = {
 
     const query = geoJsonStr ? `
       UPDATE states
-      SET state = COALESCE($1, state),
-          state_lgd = COALESCE($2, state_lgd),
+      SET "STATE" = COALESCE($1, "STATE"),
+          "State_LGD" = COALESCE($2, "State_LGD"),
           geom = ST_SetSRID(ST_GeomFromGeoJSON($3), 4326)
       WHERE id = $4
-      RETURNING id, state AS "STATE", state_lgd AS "State_LGD", ST_AsGeoJSON(geom) AS geom
+      RETURNING id, "STATE", "State_LGD", ST_AsGeoJSON(geom) AS geom
     ` : `
       UPDATE states
-      SET state = COALESCE($1, state),
-          state_lgd = COALESCE($2, state_lgd)
+      SET "STATE" = COALESCE($1, "STATE"),
+          "State_LGD" = COALESCE($2, "State_LGD")
       WHERE id = $3
-      RETURNING id, state AS "STATE", state_lgd AS "State_LGD", ST_AsGeoJSON(geom) AS geom
+      RETURNING id, "STATE", "State_LGD", ST_AsGeoJSON(geom) AS geom
     `;
 
     const params = geoJsonStr
-      ? [stateName, stateLgd ? parseInt(stateLgd, 10) || null : null, geoJsonStr, id]
-      : [stateName, stateLgd ? parseInt(stateLgd, 10) || null : null, id];
+      ? [stateName, stateLgd ? parseInt(stateLgd, 10) || null : null, geoJsonStr, effectiveId]
+      : [stateName, stateLgd ? parseInt(stateLgd, 10) || null : null, effectiveId];
 
     const { rows } = await pool.query(query, params);
 

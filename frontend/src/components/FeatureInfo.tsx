@@ -189,7 +189,7 @@ export const FeatureInfo: React.FC<FeatureInfoProps> = ({
           <span className="hud-workspace-pill" title={`Source: ${layerMeta.workspace}`}>
             {layerMeta.workspace}
           </span>
-          <span className="hud-geom-badge">{geometryInfo.type}</span>
+          <span className="hud-geom-badge" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '110px' }} title={geometryInfo.type}>{geometryInfo.type}</span>
         </div>
       </div>
 

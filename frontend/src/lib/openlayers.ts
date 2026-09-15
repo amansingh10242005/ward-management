@@ -14,6 +14,8 @@ import OlMap from 'ol/Map';
 import View from 'ol/View';
 import TileLayer from 'ol/layer/Tile';
 import TileWMS from 'ol/source/TileWMS';
+import ImageLayer from 'ol/layer/Image';
+import ImageWMS from 'ol/source/ImageWMS';
 import OSM from 'ol/source/OSM';
 import XYZ from 'ol/source/XYZ';
 import VectorLayer from 'ol/layer/Vector';
@@ -42,6 +44,7 @@ import Stroke from 'ol/style/Stroke';
 import Text from 'ol/style/Text';
 import { bbox as bboxStrategy } from 'ol/loadingstrategy';
 import { fromLonLat, transformExtent } from 'ol/proj';
+import { extend } from 'ol/extent';
 import Collection from 'ol/Collection';
 import Feature from 'ol/Feature';
 import Point from 'ol/geom/Point';
@@ -49,8 +52,9 @@ import LineString from 'ol/geom/LineString';
 import Polygon from 'ol/geom/Polygon';
 import { altKeyOnly, singleClick } from 'ol/events/condition';
 import { unByKey } from 'ol/Observable';
-import { parseFeatureId } from '../utils/featureUtils';
+import { parseFeatureId, isMercatorCoordinates } from '../utils/featureUtils';
 import { apiClient } from './api';
+import { editSessionHistory } from '../services/editSessionHistory';
 
 const GEOSERVER_URL = import.meta.env.VITE_GEOSERVER_BASE_URL;
 const WORKSPACE = import.meta.env.VITE_GEOSERVER_WORKSPACE;
@@ -66,16 +70,16 @@ const COLORS = {
 
 // ── Style factories ─────────────────────────────────────────────────────────
 
-/** Invisible transparent style for hit-detection WFS layers (default) */
+/** Hit-detection style for points (non-zero alpha so canvas hit-detection succeeds) */
 const transparentPointStyle = new Style({
   image: new CircleStyle({
-    radius: 10,
-    fill:   new Fill({ color: 'rgba(0,0,0,0)' }),
-    stroke: new Stroke({ color: 'rgba(0,0,0,0)', width: 1 }),
+    radius: 14,
+    fill:   new Fill({ color: 'rgba(245,184,75,0.01)' }),
+    stroke: new Stroke({ color: 'rgba(255,255,255,0.01)', width: 4 }),
   }),
 });
 const transparentLineStyle = new Style({
-  stroke: new Stroke({ color: 'rgba(255,255,255,0.01)', width: 10 }),
+  stroke: new Stroke({ color: 'rgba(25,181,230,0.01)', width: 16 }),
 });
 
 
@@ -189,7 +193,7 @@ export interface PerfMetrics {
 
 export class OpenLayersService {
   private map: OlMap | null = null;
-  private layers: Record<string, TileLayer<TileWMS>> = {};
+  private layers: Record<string, ImageLayer<ImageWMS> | TileLayer<TileWMS> | any> = {};
 
   private perfMetrics: PerfMetrics = {
     wmsTileLoads: 0,
@@ -230,6 +234,8 @@ export class OpenLayersService {
   // Track currently selected feature for style functions
   private selectedLayerName: string | null = null;
   private selectedFeatureId:  string | number | null = null;
+  private selectedRawId: string | number | null = null;
+  private selectedFeatureProperties: any = null;
 
   // ── WFS sources ────────────────────────────────────────────────────────────
 
@@ -280,47 +286,63 @@ export class OpenLayersService {
 
   private streetlightsWfsLayer = new VectorLayer({
     source: this.streetlightsWfsSource,
-    maxResolution: 80, // Active at street/neighborhood scale (zoom >= 11; default zoom 12 is ~38.2 m/px)
+    maxResolution: 800, // Active across street and ward scales (zoom >= 8)
     style:  (feature: any) => {
       const rawId = String(parseFeatureId(feature.getId()) ?? feature.getId());
       if (this.hiddenFeatureIds.streetlights?.has(rawId)) {
         return new Style({});
       }
-      if (
-        this.selectedLayerName === 'streetlights' &&
-        this.selectedFeatureId !== null &&
-        feature.getId() === this.selectedFeatureId
-      ) {
+      const featId = feature.getId();
+      const featRawId = parseFeatureId(featId);
+      const featDbId = feature.get('id') ?? feature.get('ID');
+      const selDbId = this.selectedFeatureProperties?.id ?? this.selectedFeatureProperties?.ID ?? this.selectedRawId;
+
+      const isSelected = this.selectedLayerName === 'streetlights' && (
+        (this.selectedFeatureId !== null && featId === this.selectedFeatureId) ||
+        (this.selectedRawId !== null && (featRawId === this.selectedRawId || String(featRawId) === String(this.selectedRawId))) ||
+        (selDbId != null && featDbId != null && String(featDbId) === String(selDbId))
+      );
+
+      if (isSelected) {
         return makeStreetlightSelectedStyle();
       }
       return transparentPointStyle;
     },
-    zIndex: 900,
+    zIndex: 950,
+    visible: false,
   });
 
   private roadsWfsLayer = new VectorLayer({
     source: this.roadsWfsSource,
-    maxResolution: 300, // Active at ward/neighborhood scale (zoom >= 9)
+    maxResolution: 3000, // Active across ward, city, and district scales (zoom >= 6)
     style:  (feature: any) => {
       const rawId = String(parseFeatureId(feature.getId()) ?? feature.getId());
       if (this.hiddenFeatureIds.roads?.has(rawId)) {
         return new Style({});
       }
-      if (
-        this.selectedLayerName === 'roads' &&
-        this.selectedFeatureId !== null &&
-        feature.getId() === this.selectedFeatureId
-      ) {
+      const featId = feature.getId();
+      const featRawId = parseFeatureId(featId);
+      const featDbId = feature.get('id') ?? feature.get('ID');
+      const selDbId = this.selectedFeatureProperties?.id ?? this.selectedFeatureProperties?.ID ?? this.selectedRawId;
+
+      const isSelected = this.selectedLayerName === 'roads' && (
+        (this.selectedFeatureId !== null && featId === this.selectedFeatureId) ||
+        (this.selectedRawId !== null && (featRawId === this.selectedRawId || String(featRawId) === String(this.selectedRawId))) ||
+        (selDbId != null && featDbId != null && String(featDbId) === String(selDbId))
+      );
+
+      if (isSelected) {
         return makeRoadSelectedStyle();
       }
       return transparentLineStyle;
     },
-    zIndex: 900,
+    zIndex: 930,
+    visible: false,
   });
 
   private zonesWfsLayer = new VectorLayer({
     source: this.zonesWfsSource,
-    maxResolution: 1250, // Active at city/zone scale (zoom >= 7)
+    maxResolution: 3000, // Active at city/zone scale (zoom >= 6)
     style:  (feature: any) => {
       const rawId = String(parseFeatureId(feature.getId()) ?? feature.getId());
       if (this.hiddenFeatureIds.zones?.has(rawId)) {
@@ -337,9 +359,19 @@ export class OpenLayersService {
         overflow: true,
       }) : undefined;
 
-      const isSelected = this.selectedLayerName === 'zones' &&
-                         this.selectedFeatureId !== null &&
-                         feature.getId() === this.selectedFeatureId;
+      const featId = feature.getId();
+      const featRawId = parseFeatureId(featId);
+      const featDbId = feature.get('id') ?? feature.get('ID');
+      const featName = (feature.get('name') || '').trim().toLowerCase();
+      const selName = (this.selectedFeatureProperties?.name || '').trim().toLowerCase();
+      const selDbId = this.selectedFeatureProperties?.id ?? this.selectedFeatureProperties?.ID ?? this.selectedRawId;
+
+      const isSelected = this.selectedLayerName === 'zones' && (
+        (this.selectedFeatureId !== null && featId === this.selectedFeatureId) ||
+        (this.selectedRawId !== null && (featRawId === this.selectedRawId || String(featRawId) === String(this.selectedRawId))) ||
+        (selDbId != null && featDbId != null && String(featDbId) === String(selDbId)) ||
+        (Boolean(selName) && Boolean(featName) && featName === selName)
+      );
 
       if (isSelected) {
         const styles = makeZoneSelectedStyle();
@@ -354,7 +386,8 @@ export class OpenLayersService {
         text: textStyle,
       });
     },
-    zIndex: 900,
+    zIndex: 910,
+    visible: false,
   });
 
   private statesWfsLayer = new VectorLayer({
@@ -365,76 +398,72 @@ export class OpenLayersService {
       if (this.hiddenFeatureIds.states?.has(rawId)) {
         return new Style({});
       }
-      const name = feature.get('STATE') || feature.get('state');
-      const textStyle = name ? new Text({
-        text: name,
-        font: '700 16px "Inter", sans-serif',
-        fill: new Fill({ color: '#f8fafc' }),
-        stroke: new Stroke({ color: '#475569', width: 4 }),
-        textAlign: 'center',
-        textBaseline: 'middle',
-        overflow: true,
-      }) : undefined;
 
-      const isSelected = this.selectedLayerName === 'states' &&
-                         this.selectedFeatureId !== null &&
-                         feature.getId() === this.selectedFeatureId;
+      const featId = feature.getId();
+      const featRawId = parseFeatureId(featId);
+      const featDbId = feature.get('id') ?? feature.get('ID');
+      const featState = (feature.get('STATE') || feature.get('state') || '').trim().toUpperCase();
+      const selState = (this.selectedFeatureProperties?.STATE || this.selectedFeatureProperties?.state || '').trim().toUpperCase();
+      const selDbId = this.selectedFeatureProperties?.id ?? this.selectedFeatureProperties?.ID ?? this.selectedRawId;
+
+      const isSelected = this.selectedLayerName === 'states' && (
+        (this.selectedFeatureId !== null && featId === this.selectedFeatureId) ||
+        (this.selectedRawId !== null && (featRawId === this.selectedRawId || String(featRawId) === String(this.selectedRawId))) ||
+        (selDbId != null && featDbId != null && String(featDbId) === String(selDbId)) ||
+        (Boolean(selState) && Boolean(featState) && featState === selState)
+      );
 
       if (isSelected) {
         return new Style({
           fill:   new Fill({ color: 'rgba(244,63,94,0.08)' }),
           stroke: new Stroke({ color: 'rgba(244,63,94,0.60)', width: 6 }),
-          text: textStyle,
         });
       }
       return new Style({
-        fill:   new Fill({ color: 'rgba(255,255,255,0.0)' }),
+        fill:   new Fill({ color: 'rgba(255,255,255,0.01)' }),
         stroke: new Stroke({ color: 'rgba(255,255,255,0.01)', width: 2 }),
-        text: textStyle,
       });
     },
     zIndex: 880,
-    visible: true,
+    visible: false,
   });
 
   private districtsWfsLayer = new VectorLayer({
     source: this.districtsWfsSource,
-    maxResolution: 2500, // Active at regional/district scale (zoom >= 6; prevents 152 MB payload at world zoom)
+    maxResolution: 10000, // Active at regional and district scale across zoom levels
     style:  (feature: any) => {
       const rawId = String(parseFeatureId(feature.getId()) ?? feature.getId());
       if (this.hiddenFeatureIds.districts?.has(rawId)) {
         return new Style({});
       }
-      const name = feature.get('District') || feature.get('district');
-      const textStyle = name ? new Text({
-        text: name,
-        font: '600 14px "Inter", sans-serif',
-        fill: new Fill({ color: '#f1f5f9' }),
-        stroke: new Stroke({ color: '#64748b', width: 4 }),
-        textAlign: 'center',
-        textBaseline: 'middle',
-        overflow: true,
-      }) : undefined;
 
-      const isSelected = this.selectedLayerName === 'districts' &&
-                         this.selectedFeatureId !== null &&
-                         feature.getId() === this.selectedFeatureId;
+      const featId = feature.getId();
+      const featRawId = parseFeatureId(featId);
+      const featDbId = feature.get('id') ?? feature.get('ID');
+      const featDistrict = (feature.get('District') || feature.get('district') || '').trim().toUpperCase();
+      const selDistrict = (this.selectedFeatureProperties?.District || this.selectedFeatureProperties?.district || '').trim().toUpperCase();
+      const selDbId = this.selectedFeatureProperties?.id ?? this.selectedFeatureProperties?.ID ?? this.selectedRawId;
+
+      const isSelected = this.selectedLayerName === 'districts' && (
+        (this.selectedFeatureId !== null && featId === this.selectedFeatureId) ||
+        (this.selectedRawId !== null && (featRawId === this.selectedRawId || String(featRawId) === String(this.selectedRawId))) ||
+        (selDbId != null && featDbId != null && String(featDbId) === String(selDbId)) ||
+        (Boolean(selDistrict) && Boolean(featDistrict) && featDistrict === selDistrict)
+      );
 
       if (isSelected) {
         return new Style({
           fill:   new Fill({ color: 'rgba(168,85,247,0.08)' }),
           stroke: new Stroke({ color: 'rgba(168,85,247,0.60)', width: 6 }),
-          text: textStyle,
         });
       }
       return new Style({
-        fill:   new Fill({ color: 'rgba(255,255,255,0.0)' }),
+        fill:   new Fill({ color: 'rgba(255,255,255,0.01)' }),
         stroke: new Stroke({ color: 'rgba(255,255,255,0.01)', width: 2 }),
-        text: textStyle,
       });
     },
     zIndex: 890,
-    visible: true,
+    visible: false,
   });
 
   private activeInteractions: Interaction[] = [];
@@ -457,6 +486,11 @@ export class OpenLayersService {
   private onVertexEditCancelCallback: (() => void) | null = null;
   private savedSelectCallback: ((feature: any, layerName: string) => void) | null = null;
   private dynamicSelectKey: any = null;
+  private updateVertexEditStyles: (() => void) | null = null;
+  private currentDrawInteraction: Draw | null = null;
+  private currentDrawSketchFeature: Feature | null = null;
+  private drawRedoCoordinates: any[] = [];
+  private currentTranslateTargetFeature: Feature | null = null;
   public dynamicVectorSource: VectorSource = new VectorSource();
   public dynamicVectorLayer: VectorLayer<VectorSource> = new VectorLayer({
     source: this.dynamicVectorSource,
@@ -577,55 +611,55 @@ export class OpenLayersService {
     }
 
     this.layers = {
-      zones: new TileLayer({
-        source: new TileWMS({
+      zones: new ImageLayer({
+        source: new ImageWMS({
           url:        `${GEOSERVER_URL}/${WORKSPACE}/wms`,
-          params:     { LAYERS: `${WORKSPACE}:zones`, TILED: true, TRANSPARENT: true, FORMAT: 'image/png' },
+          params:     { LAYERS: `${WORKSPACE}:zones`, TRANSPARENT: true, FORMAT: 'image/png' },
+          ratio:      1,
           serverType: 'geoserver',
           crossOrigin: 'anonymous',
-          transition: 0,
         }),
-        visible: true,
+        visible: false,
       }),
-      states: new TileLayer({
-        source: new TileWMS({
+      states: new ImageLayer({
+        source: new ImageWMS({
           url:        `${GEOSERVER_URL}/${WORKSPACE}/wms`,
-          params:     { LAYERS: `${WORKSPACE}:states`, TILED: true, TRANSPARENT: true, FORMAT: 'image/png' },
+          params:     { LAYERS: `${WORKSPACE}:states`, TRANSPARENT: true, FORMAT: 'image/png' },
+          ratio:      1,
           serverType: 'geoserver',
           crossOrigin: 'anonymous',
-          transition: 0,
         }),
-        visible: true,
+        visible: false,
       }),
-      districts: new TileLayer({
-        source: new TileWMS({
+      districts: new ImageLayer({
+        source: new ImageWMS({
           url:        `${GEOSERVER_URL}/${WORKSPACE}/wms`,
-          params:     { LAYERS: `${WORKSPACE}:districts`, TILED: true, TRANSPARENT: true, FORMAT: 'image/png' },
+          params:     { LAYERS: `${WORKSPACE}:districts`, TRANSPARENT: true, FORMAT: 'image/png' },
+          ratio:      1,
           serverType: 'geoserver',
           crossOrigin: 'anonymous',
-          transition: 0,
         }),
-        visible: true,
+        visible: false,
       }),
-      roads: new TileLayer({
-        source: new TileWMS({
+      roads: new ImageLayer({
+        source: new ImageWMS({
           url:        `${GEOSERVER_URL}/${WORKSPACE}/wms`,
-          params:     { LAYERS: `${WORKSPACE}:roads`, TILED: true, TRANSPARENT: true, FORMAT: 'image/png' },
+          params:     { LAYERS: `${WORKSPACE}:roads`, TRANSPARENT: true, FORMAT: 'image/png' },
+          ratio:      1,
           serverType: 'geoserver',
           crossOrigin: 'anonymous',
-          transition: 0,
         }),
-        visible: true,
+        visible: false,
       }),
-      streetlights: new TileLayer({
-        source: new TileWMS({
+      streetlights: new ImageLayer({
+        source: new ImageWMS({
           url:        `${GEOSERVER_URL}/${WORKSPACE}/wms`,
-          params:     { LAYERS: `${WORKSPACE}:streetlights`, TILED: true, TRANSPARENT: true, FORMAT: 'image/png' },
+          params:     { LAYERS: `${WORKSPACE}:streetlights`, TRANSPARENT: true, FORMAT: 'image/png' },
+          ratio:      1,
           serverType: 'geoserver',
           crossOrigin: 'anonymous',
-          transition: 0,
         }),
-        visible: true,
+        visible: false,
       }),
     };
 
@@ -665,16 +699,16 @@ export class OpenLayersService {
     if (this.dynamicLayerDefs && typeof this.dynamicLayerDefs.forEach === 'function') {
       this.dynamicLayerDefs.forEach((def) => {
         if (!this.layers[def.layerName]) {
-          const newLayer = new TileLayer({
-            source: new TileWMS({
+          const newLayer = new ImageLayer({
+            source: new ImageWMS({
               url:        `${GEOSERVER_URL}/${def.workspace}/wms`,
-              params:     { LAYERS: def.qualifiedName, TILED: true, TRANSPARENT: true, FORMAT: 'image/png' },
+              params:     { LAYERS: def.qualifiedName, TRANSPARENT: true, FORMAT: 'image/png' },
+              ratio:      1,
               serverType: 'geoserver',
               crossOrigin: 'anonymous',
-              transition: 0,
             }),
             visible: false,
-            zIndex: 10,
+            zIndex: 50,
           });
           this.layers[def.layerName] = newLayer;
           this.map!.addLayer(newLayer);
@@ -691,11 +725,17 @@ export class OpenLayersService {
 
     // Change cursor to pointer (hand) when hovering over interactive features
     this.map.on('pointermove', (e) => {
-      if (this.map!.hasFeatureAtPixel(e.pixel, { hitTolerance: 5 })) {
-        this.map!.getTargetElement().style.cursor = 'pointer';
-      } else {
-        this.map!.getTargetElement().style.cursor = '';
-      }
+      const hasInteractive = this.map!.hasFeatureAtPixel(e.pixel, {
+        layerFilter: (layer) => {
+          if (layer === this.streetlightsWfsLayer) return this.isLayerVisible('streetlights');
+          if (layer === this.roadsWfsLayer) return this.isLayerVisible('roads');
+          if (layer === this.zonesWfsLayer) return this.isLayerVisible('zones');
+          if (layer === this.dynamicVectorLayer) return true;
+          return false;
+        },
+        hitTolerance: 10,
+      });
+      this.map!.getTargetElement().style.cursor = hasInteractive ? 'pointer' : '';
     });
 
     // Performance instrumentation: track WMS tile events
@@ -758,7 +798,8 @@ export class OpenLayersService {
       const miny = Number(latLonBoundingBox.miny);
       const maxx = Number(latLonBoundingBox.maxx);
       const maxy = Number(latLonBoundingBox.maxy);
-      if (!isNaN(minx) && !isNaN(miny) && !isNaN(maxx) && !isNaN(maxy)) {
+      const isWorld = minx <= -170 && maxx >= 170 && miny <= -85 && maxy >= 80;
+      if (!isNaN(minx) && !isNaN(miny) && !isNaN(maxx) && !isNaN(maxy) && !isWorld) {
         this.layerExtentsCache[layerName] = transformExtent([minx, miny, maxx, maxy], 'EPSG:4326', 'EPSG:3857') as [number, number, number, number];
       }
     }
@@ -770,20 +811,56 @@ export class OpenLayersService {
 
     if (!this.map || this.layers[layerName]) return;
     
-    const newLayer = new TileLayer({
-      source: new TileWMS({
+    const newLayer = new ImageLayer({
+      source: new ImageWMS({
         url:        `${GEOSERVER_URL}/${workspace}/wms`,
-        params:     { LAYERS: qualifiedName, TILED: true, TRANSPARENT: true, FORMAT: 'image/png' },
+        params:     { LAYERS: qualifiedName, TRANSPARENT: true, FORMAT: 'image/png' },
+        ratio:      1,
         serverType: 'geoserver',
         crossOrigin: 'anonymous',
-        transition: 0,
       }),
       visible: false,
-      zIndex: 10, // Above basemap (0), below existing vectors (880+)
+      zIndex: 50, // Above basemap (0) and administrative polygons, below interactive edits
     });
     
     this.layers[layerName] = newLayer;
     this.map.addLayer(newLayer);
+
+    // Pre-calculate real feature extent in background if needed
+    if (!this.layerExtentsCache[layerName]) {
+      this.fetchRealLayerExtent(workspace, layerName).catch(() => {});
+    }
+  }
+
+  private async fetchRealLayerExtent(workspace: string, layerName: string): Promise<[number, number, number, number] | null> {
+    try {
+      const url = `${GEOSERVER_URL}/${workspace}/ows?service=WFS&version=1.1.0&request=GetFeature&typeName=${workspace}:${layerName}&outputFormat=application/json&maxFeatures=100&srsname=EPSG:3857`;
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      const data = await res.json();
+      const features = new GeoJSON().readFeatures(data);
+      if (features && features.length > 0) {
+        let combined: [number, number, number, number] | null = null;
+        for (const feat of features) {
+          const geom = feat.getGeometry();
+          if (geom) {
+            const ext = geom.getExtent() as [number, number, number, number];
+            if (!combined) {
+              combined = [ext[0], ext[1], ext[2], ext[3]];
+            } else {
+              extend(combined, ext);
+            }
+          }
+        }
+        if (combined) {
+          this.layerExtentsCache[layerName] = combined;
+          return combined;
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return null;
   }
 
   toggleDynamicLayer(layerName: string, isVisible: boolean) {
@@ -792,16 +869,16 @@ export class OpenLayersService {
     }
     if (this.map && !this.layers[layerName] && this.dynamicLayerDefs.has(layerName)) {
       const def = this.dynamicLayerDefs.get(layerName)!;
-      const newLayer = new TileLayer({
-        source: new TileWMS({
+      const newLayer = new ImageLayer({
+        source: new ImageWMS({
           url:        `${GEOSERVER_URL}/${def.workspace}/wms`,
-          params:     { LAYERS: def.qualifiedName, TILED: true, TRANSPARENT: true, FORMAT: 'image/png' },
+          params:     { LAYERS: def.qualifiedName, TRANSPARENT: true, FORMAT: 'image/png' },
+          ratio:      1,
           serverType: 'geoserver',
           crossOrigin: 'anonymous',
-          transition: 0,
         }),
         visible: false,
-        zIndex: 10,
+        zIndex: 50,
       });
       this.layers[def.layerName] = newLayer;
       this.map.addLayer(newLayer);
@@ -814,30 +891,67 @@ export class OpenLayersService {
     this.layerVisibilityListeners.forEach(l => l(layerName, isVisible));
   }
 
-  zoomToDynamicLayerExtent(layerMeta: any) {
+  async zoomToDynamicLayerExtent(layerMeta: any) {
     if (!this.map) return;
     
-    const layerName = layerMeta?.name;
-    if (layerName && this.layerExtentsCache[layerName]) {
-      this.map.getView().fit(this.layerExtentsCache[layerName], { padding: [50, 50, 50, 50], duration: 800 });
+    const layerName = typeof layerMeta === 'string' ? layerMeta : layerMeta?.name;
+    if (!layerName) return;
+
+    const isWorldExtent = (ext: any) => {
+      if (!ext || !Array.isArray(ext) || ext.length < 4) return true;
+      return (ext[0] <= -18000000 && ext[2] >= 18000000) || (ext[1] <= -18000000 && ext[3] >= 18000000);
+    };
+
+    if (this.layerExtentsCache[layerName]) {
+      this.map.getView().fit(this.layerExtentsCache[layerName], { padding: [80, 80, 80, 80], duration: 800, maxZoom: 16 });
       return;
     }
 
-    if (!layerMeta || !layerMeta.latLonBoundingBox) return;
-    const minx = Number(layerMeta.latLonBoundingBox.minx);
-    const miny = Number(layerMeta.latLonBoundingBox.miny);
-    const maxx = Number(layerMeta.latLonBoundingBox.maxx);
-    const maxy = Number(layerMeta.latLonBoundingBox.maxy);
-    if (isNaN(minx) || isNaN(miny) || isNaN(maxx) || isNaN(maxy)) return;
+    const def = this.dynamicLayerDefs?.get(layerName);
+    const meta = typeof layerMeta === 'object' && layerMeta !== null ? layerMeta : def;
+    const box = meta?.latLonBoundingBox || def?.latLonBoundingBox;
 
-    // Transform from EPSG:4326 (lat/lon) to EPSG:3857 (OpenLayers default web mercator)
-    const extent4326 = [minx, miny, maxx, maxy];
-    const extent3857 = transformExtent(extent4326, 'EPSG:4326', 'EPSG:3857') as [number, number, number, number];
-    if (layerName) {
-      this.layerExtentsCache[layerName] = extent3857;
+    if (box) {
+      const minx = Number(box.minx);
+      const miny = Number(box.miny);
+      const maxx = Number(box.maxx);
+      const maxy = Number(box.maxy);
+      if (!isNaN(minx) && !isNaN(miny) && !isNaN(maxx) && !isNaN(maxy)) {
+        const extent3857 = transformExtent([minx, miny, maxx, maxy], 'EPSG:4326', 'EPSG:3857') as [number, number, number, number];
+        this.layerExtentsCache[layerName] = extent3857;
+        this.map.getView().fit(extent3857, { padding: [80, 80, 80, 80], duration: 800, maxZoom: 16 });
+        return;
+      }
     }
-    
-    this.map.getView().fit(extent3857, { padding: [50, 50, 50, 50], duration: 800 });
+
+    const nativeBox = meta?.nativeBoundingBox || (def as any)?.nativeBoundingBox;
+    if (nativeBox) {
+      const minx = Number(nativeBox.minx);
+      const miny = Number(nativeBox.miny);
+      const maxx = Number(nativeBox.maxx);
+      const maxy = Number(nativeBox.maxy);
+      const crs = String(nativeBox.crs || meta?.srs || 'EPSG:4326');
+      if (!isNaN(minx) && !isNaN(miny) && !isNaN(maxx) && !isNaN(maxy)) {
+        const extent3857 = (crs.includes('3857') || crs.includes('900913'))
+          ? [minx, miny, maxx, maxy] as [number, number, number, number]
+          : transformExtent([minx, miny, maxx, maxy], crs, 'EPSG:3857') as [number, number, number, number];
+        this.layerExtentsCache[layerName] = extent3857;
+        this.map.getView().fit(extent3857, { padding: [80, 80, 80, 80], duration: 800, maxZoom: 16 });
+        return;
+      }
+    }
+
+    // Query GeoServer WFS GetFeature to calculate actual feature bounding box
+    const workspace = meta?.workspace || def?.workspace || WORKSPACE;
+    const realExtent = await this.fetchRealLayerExtent(workspace, layerName);
+    if (realExtent) {
+      this.map.getView().fit(realExtent, { padding: [80, 80, 80, 80], duration: 800, maxZoom: 16 });
+      return;
+    }
+
+    // Safe fallback: Zoom to Chennai ward region (never Antarctica/world ocean)
+    const chennaiWardExtent: [number, number, number, number] = [8910000, 1445000, 8935000, 1470000];
+    this.map.getView().fit(chennaiWardExtent, { padding: [80, 80, 80, 80], duration: 800, maxZoom: 14 });
   }
 
   // ── Selected feature glow ────────────────────────────────────────────────────
@@ -849,22 +963,35 @@ export class OpenLayersService {
   setSelectedFeature(layerName: string | null, featureId: string | number | null, fallbackGeoJson?: any) {
     this.selectedLayerName  = layerName;
     this.selectedFeatureId  = featureId;
+    this.selectedRawId      = parseFeatureId(featureId);
+    this.selectedFeatureProperties = fallbackGeoJson?.properties || (fallbackGeoJson?.type === 'Feature' ? fallbackGeoJson.properties : fallbackGeoJson) || null;
+
+    if (!layerName) {
+      this.selectedLayerName = null;
+      this.selectedFeatureId = null;
+      this.selectedRawId = null;
+      this.selectedFeatureProperties = null;
+    }
 
     const isCoreLayer = ['states', 'districts', 'zones', 'roads', 'streetlights'].includes(layerName || '');
     
     if (layerName && !isCoreLayer) {
-      if (fallbackGeoJson) {
+      if (fallbackGeoJson && fallbackGeoJson.geometry && fallbackGeoJson.geometry.type) {
         if (this.dynamicVectorSource) {
           this.dynamicVectorSource.clear();
-          const rawFeature = new GeoJSON().readFeature(fallbackGeoJson, {
-            dataProjection: 'EPSG:4326',
-            featureProjection: 'EPSG:3857'
-          });
-          const feature: Feature = (Array.isArray(rawFeature) ? rawFeature[0] : rawFeature) as Feature;
-          if (!feature.getId() && featureId) {
-            feature.setId(featureId);
+          try {
+            const rawFeature = new GeoJSON().readFeature(fallbackGeoJson, {
+              dataProjection: 'EPSG:4326',
+              featureProjection: 'EPSG:3857'
+            });
+            const feature: Feature = (Array.isArray(rawFeature) ? rawFeature[0] : rawFeature) as Feature;
+            if (!feature.getId() && featureId) {
+              feature.setId(featureId);
+            }
+            this.dynamicVectorSource.addFeature(feature);
+          } catch (e) {
+            console.warn('[OpenLayers] Could not parse fallback feature geometry:', e);
           }
-          this.dynamicVectorSource.addFeature(feature);
         }
       } else {
         // If fallbackGeoJson was omitted, check if this feature is already in dynamicVectorSource
@@ -917,19 +1044,27 @@ export class OpenLayersService {
   async searchFeaturesFromBackend(
     layerName: string,
     search: string = '',
-    signal?: AbortSignal
-  ): Promise<any[]> {
-    if (!this.map) return [];
+    signal?: AbortSignal,
+    startIndex: number = 0,
+    maxFeatures: number = 40
+  ): Promise<any> {
+    if (!this.map) {
+      const emptyRes: any = [];
+      emptyRes.features = [];
+      emptyRes.totalCount = 0;
+      emptyRes.hasMore = false;
+      return emptyRes;
+    }
     
     let cqlFilter = '';
     if (search.trim()) {
       const searchStr = search.replace(/'/g, "''");
       switch (layerName) {
         case 'states':
-          cqlFilter = `state ILIKE '%${searchStr}%'`;
+          cqlFilter = `STATE ILIKE '%${searchStr}%'`;
           break;
         case 'districts':
-          cqlFilter = `district ILIKE '%${searchStr}%' OR state ILIKE '%${searchStr}%'`;
+          cqlFilter = `District ILIKE '%${searchStr}%' OR STATE ILIKE '%${searchStr}%'`;
           break;
         case 'zones':
           cqlFilter = `name ILIKE '%${searchStr}%'`;
@@ -940,26 +1075,35 @@ export class OpenLayersService {
         case 'streetlights':
           cqlFilter = `name ILIKE '%${searchStr}%'`;
           break;
+        default:
+          cqlFilter = `strToLowerCase(name) LIKE '%${searchStr.toLowerCase()}%'`;
+          break;
       }
     }
 
     // Property projection based on layer to avoid fetching multi-megabyte geometries for feature listing/search
     let propertyNames = '';
+    let sortProp = '';
     switch (layerName) {
       case 'states':
-        propertyNames = 'id,state,state_lgd';
+        propertyNames = 'id,STATE';
+        sortProp = 'STATE A';
         break;
       case 'districts':
-        propertyNames = 'id,district,district_l,state';
+        propertyNames = 'id,District,STATE';
+        sortProp = 'District A';
         break;
       case 'zones':
         propertyNames = 'id,name,type';
+        sortProp = 'name A';
         break;
       case 'roads':
         propertyNames = 'id,name,category,zone_id';
+        sortProp = 'name A';
         break;
       case 'streetlights':
         propertyNames = 'id,name,type,zone_id,road_id';
+        sortProp = 'name A';
         break;
     }
 
@@ -971,7 +1115,13 @@ export class OpenLayersService {
     url.searchParams.append('typeName', `${WORKSPACE}:${layerName}`);
     url.searchParams.append('outputFormat', 'application/json');
     url.searchParams.append('srsname', 'EPSG:3857');
-    url.searchParams.append('maxFeatures', '100');
+    url.searchParams.append('maxFeatures', String(maxFeatures));
+    if (startIndex > 0) {
+      url.searchParams.append('startIndex', String(startIndex));
+    }
+    if (sortProp) {
+      url.searchParams.append('sortBy', sortProp);
+    }
     if (propertyNames) {
       url.searchParams.append('propertyName', propertyNames);
     }
@@ -981,13 +1131,82 @@ export class OpenLayersService {
 
     const startTime = performance.now();
     try {
-      const res = await fetch(url.toString(), { signal });
-      if (!res.ok) return [];
-      const text = await res.text();
+      let res = await fetch(url.toString(), { signal });
+      let text = res.ok ? await res.text() : '';
+
+      // Fallback 1: If GeoServer returned error, retry without sortBy
+      if ((!text || !text.trim().startsWith('{')) && url.searchParams.has('sortBy')) {
+        url.searchParams.delete('sortBy');
+        res = await fetch(url.toString(), { signal });
+        text = res.ok ? await res.text() : '';
+      }
+
+      // Fallback 2: If GeoServer returned error, retry with minimal safe properties (id, name/state/district)
+      if ((!text || !text.trim().startsWith('{')) && propertyNames) {
+        const safeProps = layerName === 'states' ? 'id,STATE' : (layerName === 'districts' ? 'id,District' : 'id,name');
+        url.searchParams.set('propertyName', safeProps);
+        res = await fetch(url.toString(), { signal });
+        text = res.ok ? await res.text() : '';
+      }
+
+      // Fallback 3: If still error, retry without propertyName
+      if ((!text || !text.trim().startsWith('{')) && url.searchParams.has('propertyName')) {
+        url.searchParams.delete('propertyName');
+        res = await fetch(url.toString(), { signal });
+        text = res.ok ? await res.text() : '';
+      }
+
+      // Fallback 4: If still error and we guessed a cqlFilter for dynamic layers, retry without it
+      if ((!text || !text.trim().startsWith('{')) && url.searchParams.has('cql_filter')) {
+        url.searchParams.delete('cql_filter');
+        res = await fetch(url.toString(), { signal });
+        text = res.ok ? await res.text() : '';
+      }
+
+      if (!res.ok || !text.trim().startsWith('{')) {
+        const emptyRes: any = [];
+        emptyRes.features = [];
+        emptyRes.totalCount = 0;
+        emptyRes.hasMore = false;
+        return emptyRes;
+      }
+
       const duration = performance.now() - startTime;
       const payloadBytes = new Blob([text]).size;
       const data = JSON.parse(text);
       const features = data.features || [];
+
+      // Determine totalCount
+      let totalCount = features.length;
+      if (typeof data.totalFeatures === 'number') {
+        totalCount = data.totalFeatures;
+      } else if (typeof data.numberMatched === 'number') {
+        totalCount = data.numberMatched;
+      } else if (features.length < maxFeatures) {
+        totalCount = startIndex + features.length;
+      } else {
+        totalCount = startIndex + features.length + 1;
+      }
+
+      // Sort client-side only if GeoServer didn't use sortBy
+      if (Array.isArray(features) && !url.searchParams.has('sortBy')) {
+        features.sort((a: any, b: any) => {
+          const nameA = a.properties?.district || a.properties?.District || a.properties?.state || a.properties?.STATE || a.properties?.name || '';
+          const nameB = b.properties?.district || b.properties?.District || b.properties?.state || b.properties?.STATE || b.properties?.name || '';
+          return String(nameA).localeCompare(String(nameB), undefined, { sensitivity: 'base' });
+        });
+      }
+
+      const hasMore = features.length === maxFeatures && (
+        typeof data.totalFeatures === 'number'
+          ? (startIndex + features.length < data.totalFeatures)
+          : true
+      );
+
+      const result: any = [...features];
+      result.features = features;
+      result.totalCount = totalCount;
+      result.hasMore = hasMore;
 
       // Record performance metrics
       this.perfMetrics.searchRequests++;
@@ -995,14 +1214,22 @@ export class OpenLayersService {
       this.perfMetrics.lastSearchPayloadBytes = payloadBytes;
       this.perfMetrics.lastSearchFeatureCount = features.length;
 
-      return features;
+      return result;
     } catch (err: any) {
       if (err?.name === 'AbortError') {
         // Request cancelled by newer search
-        return [];
+        const abortedRes: any = [];
+        abortedRes.features = [];
+        abortedRes.totalCount = 0;
+        abortedRes.hasMore = false;
+        return abortedRes;
       }
       console.error('Failed to search features from backend', err);
-      return [];
+      const errRes: any = [];
+      errRes.features = [];
+      errRes.totalCount = 0;
+      errRes.hasMore = false;
+      return errRes;
     }
   }
 
@@ -1021,12 +1248,14 @@ export class OpenLayersService {
   }
 
   getWfsFeature(layerName: string, featureId: string | number): Feature | null {
+    if (featureId === undefined || featureId === null) return null;
     let source: VectorSource | null = null;
     if (layerName === 'zones') source = this.zonesWfsSource;
     else if (layerName === 'roads') source = this.roadsWfsSource;
     else if (layerName === 'streetlights') source = this.streetlightsWfsSource;
     else if (layerName === 'states') source = this.statesWfsSource;
     else if (layerName === 'districts') source = this.districtsWfsSource;
+    else source = this.dynamicVectorSource;
 
     if (!source) return null;
 
@@ -1051,7 +1280,11 @@ export class OpenLayersService {
     for (const f of all) {
       const fid = f.getId();
       if (fid === featureId || fid === prefixedId) return f as Feature;
-      if (rawId !== null && (fid === rawId || parseFeatureId(fid) === rawId)) return f as Feature;
+      if (rawId !== null) {
+        if (fid === rawId || parseFeatureId(fid) === rawId) return f as Feature;
+        const propId = f.get('id') ?? f.get('ID');
+        if (propId != null && String(propId) === String(rawId)) return f as Feature;
+      }
     }
 
     return null;
@@ -1068,6 +1301,7 @@ export class OpenLayersService {
     else if (layerName === 'streetlights') source = this.streetlightsWfsSource;
     else if (layerName === 'states') source = this.statesWfsSource;
     else if (layerName === 'districts') source = this.districtsWfsSource;
+    else source = this.dynamicVectorSource;
 
     if (!source || !geoJson) return null;
 
@@ -1075,16 +1309,7 @@ export class OpenLayersService {
     if (!geomData || !geomData.coordinates) return null;
 
     try {
-      const coords = geomData.coordinates;
-      let is3857 = false;
-      if (coords && coords.length > 0) {
-        const firstPt = Array.isArray(coords[0])
-          ? (Array.isArray(coords[0][0]) ? coords[0][0] : coords[0])
-          : coords;
-        if (Array.isArray(firstPt) && (Math.abs(firstPt[0]) > 180 || Math.abs(firstPt[1]) > 90)) {
-          is3857 = true;
-        }
-      }
+      const is3857 = isMercatorCoordinates(geomData.coordinates);
 
       const featureObj = geoJson.type === 'Feature' ? geoJson : {
         type: 'Feature',
@@ -1101,10 +1326,25 @@ export class OpenLayersService {
       const fid = feature.getId() || featureId;
       feature.setId(fid);
 
-      const existing = source.getFeatureById(fid) || source.getFeatureById(`${layerName}.${fid}`);
+      let existing = (fid != null && fid !== '') ? (source.getFeatureById(fid) || source.getFeatureById(`${layerName}.${fid}`)) : null;
+      if (!existing && featureId != null && featureId !== '') {
+        existing = source.getFeatureById(featureId) || source.getFeatureById(`${layerName}.${featureId}`);
+      }
+      if (!existing) {
+        const propId = feature.get('id') ?? feature.get('ID');
+        if (propId != null) {
+          existing = source.getFeatures().find(f => {
+            const pid = f.get('id') ?? f.get('ID');
+            return pid != null && String(pid) === String(propId);
+          }) || null;
+        }
+      }
+
       if (existing) {
         const newGeom = feature.getGeometry();
         if (newGeom) existing.setGeometry(newGeom);
+        const newProps = feature.getProperties();
+        if (newProps) existing.setProperties(newProps);
         return existing as Feature;
       } else {
         source.addFeature(feature);
@@ -1122,7 +1362,7 @@ export class OpenLayersService {
     if (layerName === 'streetlights') return this.streetlightsWfsSource;
     if (layerName === 'states') return this.statesWfsSource;
     if (layerName === 'districts') return this.districtsWfsSource;
-    return null;
+    return this.dynamicVectorSource || null;
   }
 
   async centerOnFeature(layerName: string, featureId: string | number, fallbackGeoJson?: any): Promise<any> {
@@ -1130,92 +1370,176 @@ export class OpenLayersService {
     let feature = this.getWfsFeature(layerName, featureId);
     let resolvedGeoJson = fallbackGeoJson;
 
-    if ((!feature || !feature.getGeometry()) && fallbackGeoJson && fallbackGeoJson.geometry) {
+    // Check if the current feature's geometry is valid (not missing, not NaN/Infinity)
+    let geom = feature?.getGeometry();
+    let extent = geom?.getExtent();
+    const isFeatureValid = geom && extent && !extent.some(isNaN) && extent.every(isFinite);
+
+    if (!isFeatureValid && fallbackGeoJson && fallbackGeoJson.geometry) {
       feature = this.addOrUpdateWfsFeatureFromGeoJson(layerName, featureId, fallbackGeoJson);
+      geom = feature?.getGeometry();
+      extent = geom?.getExtent();
     }
 
-    // If feature geometry is not yet present (e.g. from property-projected search list),
-    // fetch the single feature's full geometry from GeoServer on demand
-    if (!feature || !feature.getGeometry()) {
+    const isGeomStillValid = geom && extent && !extent.some(isNaN) && extent.every(isFinite);
+
+    // If feature geometry is not yet present or invalid, fetch the single feature's full geometry from GeoServer on demand
+    if (!isGeomStillValid) {
       try {
         const rawId = parseFeatureId(featureId) ?? featureId;
-        const fidParam = String(rawId).includes('.') ? rawId : `${layerName}.${rawId}`;
+        const props = fallbackGeoJson?.properties || (fallbackGeoJson?.type === 'Feature' ? fallbackGeoJson.properties : fallbackGeoJson) || {};
         const baseUrl = GEOSERVER_URL.startsWith('http') ? GEOSERVER_URL : window.location.origin + GEOSERVER_URL;
-        const res = await fetch(
-          `${baseUrl}/${WORKSPACE}/ows?service=WFS&version=1.1.0&request=GetFeature&typeName=${WORKSPACE}:${layerName}&outputFormat=application/json&srsname=EPSG:3857&featureID=${fidParam}`
-        );
-        if (res.ok) {
-          const data = await res.json();
-          if (data.features && data.features.length > 0) {
-            resolvedGeoJson = data.features[0];
-            feature = this.addOrUpdateWfsFeatureFromGeoJson(layerName, featureId, data.features[0]);
-            this.refreshWfsLayerStyles();
+
+        let fetchedFeatures: any[] = [];
+
+        // 1. Try CQL filter by numeric id (works for states, districts, zones, roads, streetlights in GeoServer)
+        const numericId = typeof featureId === 'number'
+          ? featureId
+          : (props.id != null && !isNaN(Number(props.id))
+              ? Number(props.id)
+              : (!isNaN(Number(rawId)) ? Number(rawId) : null));
+
+        if (numericId !== null) {
+          try {
+            const cqlUrl = `${baseUrl}/${WORKSPACE}/ows?service=WFS&version=1.1.0&request=GetFeature&typeName=${WORKSPACE}:${layerName}&outputFormat=application/json&srsname=EPSG:3857&cql_filter=id=${numericId}`;
+            const res = await fetch(cqlUrl);
+            if (res.ok) {
+              const data = await res.json();
+              if (data.features && data.features.length > 0) {
+                fetchedFeatures = data.features;
+              }
+            }
+          } catch (err) {
+            console.warn('CQL query by id failed:', err);
           }
+        }
+
+        // 2. Try CQL filter by layer-specific name if id query didn't return features
+        if (fetchedFeatures.length === 0) {
+          let nameFilter: string | null = null;
+          if (layerName === 'states' && (props.STATE || props.state)) {
+            const stName = String(props.STATE || props.state).replace(/'/g, "''");
+            nameFilter = `STATE='${stName}'`;
+          } else if (layerName === 'districts' && (props.District || props.district)) {
+            const distName = String(props.District || props.district).replace(/'/g, "''");
+            nameFilter = `District='${distName}'`;
+          } else if ((layerName === 'zones' || layerName === 'roads' || layerName === 'streetlights') && props.name) {
+            const nameVal = String(props.name).replace(/'/g, "''");
+            nameFilter = `name='${nameVal}'`;
+          }
+
+          if (nameFilter) {
+            try {
+              const cqlUrl = `${baseUrl}/${WORKSPACE}/ows?service=WFS&version=1.1.0&request=GetFeature&typeName=${WORKSPACE}:${layerName}&outputFormat=application/json&srsname=EPSG:3857&cql_filter=${encodeURIComponent(nameFilter)}`;
+              const res = await fetch(cqlUrl);
+              if (res.ok) {
+                const data = await res.json();
+                if (data.features && data.features.length > 0) {
+                  fetchedFeatures = data.features;
+                }
+              }
+            } catch (err) {
+              console.warn('CQL query by name failed:', err);
+            }
+          }
+        }
+
+        // 3. Try GeoServer featureID as fallback
+        if (fetchedFeatures.length === 0) {
+          const fidParam = String(rawId).includes('.') ? rawId : `${layerName}.${rawId}`;
+          try {
+            const fidUrl = `${baseUrl}/${WORKSPACE}/ows?service=WFS&version=1.1.0&request=GetFeature&typeName=${WORKSPACE}:${layerName}&outputFormat=application/json&srsname=EPSG:3857&featureID=${fidParam}`;
+            const res = await fetch(fidUrl);
+            if (res.ok) {
+              const data = await res.json();
+              if (data.features && data.features.length > 0) {
+                fetchedFeatures = data.features;
+              }
+            }
+          } catch (err) {
+            console.warn('featureID query failed:', err);
+          }
+        }
+
+        if (fetchedFeatures.length > 0) {
+          resolvedGeoJson = fetchedFeatures[0];
+          feature = this.addOrUpdateWfsFeatureFromGeoJson(layerName, featureId, fetchedFeatures[0]);
+          geom = feature?.getGeometry();
+          extent = geom?.getExtent();
+          this.refreshWfsLayerStyles();
         }
       } catch (e) {
         console.warn('Failed to fetch full geometry for centerOnFeature:', e);
       }
     }
 
-    if (feature) {
-      const geometry = feature.getGeometry();
-      if (geometry) {
-        if (geometry.getType() === 'Point') {
-          this.map.getView().animate({
-            center: (geometry as Point).getCoordinates(),
-            zoom: 18,
-            duration: 600,
-          });
-        } else {
-          this.map.getView().fit(geometry.getExtent(), {
-            padding: [60, 60, 60, 60],
-            maxZoom: 16,
-            duration: 600,
-          });
-        }
-
-        if (!resolvedGeoJson || !resolvedGeoJson.geometry) {
-          try {
-            resolvedGeoJson = new GeoJSON().writeFeatureObject(feature, {
-              featureProjection: 'EPSG:3857',
-              dataProjection: 'EPSG:4326',
-            });
-          } catch {
-            // ignore
-          }
-        }
-        return resolvedGeoJson;
+    if (feature && geom && extent && !extent.some(isNaN) && extent.every(isFinite)) {
+      const geomType = geom.getType();
+      if (geomType === 'Point') {
+        // Streetlights: zoom to street level
+        this.map.getView().animate({
+          center: (geom as Point).getCoordinates(),
+          zoom: Math.max(this.map.getView().getZoom() ?? 0, 17),
+          duration: 600,
+        });
+      } else if (geomType === 'LineString' || geomType === 'MultiLineString') {
+        // Roads: fit with good padding, don't over-zoom
+        this.map.getView().fit(extent, {
+          padding: [80, 80, 80, 80],
+          maxZoom: 16,
+          minResolution: 1,
+          duration: 600,
+        });
+      } else if (layerName === 'states' || layerName === 'districts') {
+        // States/Districts: fit to boundary, don't zoom too close
+        this.map.getView().fit(extent, {
+          padding: [60, 60, 60, 60],
+          maxZoom: 10,
+          duration: 600,
+        });
+      } else {
+        this.map.getView().fit(extent, {
+          padding: [60, 60, 60, 60],
+          maxZoom: 16,
+          duration: 600,
+        });
       }
+
+      if (!resolvedGeoJson || !resolvedGeoJson.geometry) {
+        try {
+          resolvedGeoJson = new GeoJSON().writeFeatureObject(feature, {
+            featureProjection: 'EPSG:3857',
+            dataProjection: 'EPSG:4326',
+          });
+        } catch {
+          // ignore
+        }
+      }
+      return resolvedGeoJson;
     }
 
     const geomData = fallbackGeoJson?.geometry || fallbackGeoJson;
     if (geomData && geomData.type && geomData.coordinates) {
       try {
-        const coords = geomData.coordinates;
-        let is3857 = false;
-        if (coords && coords.length > 0) {
-          const firstPt = Array.isArray(coords[0])
-            ? (Array.isArray(coords[0][0]) ? coords[0][0] : coords[0])
-            : coords;
-          if (Array.isArray(firstPt) && (Math.abs(firstPt[0]) > 180 || Math.abs(firstPt[1]) > 90)) {
-            is3857 = true;
-          }
-        }
-        const geom = new GeoJSON().readGeometry(geomData, {
+        const is3857 = isMercatorCoordinates(geomData.coordinates);
+        const fallbackGeom = new GeoJSON().readGeometry(geomData, {
           dataProjection: is3857 ? 'EPSG:3857' : 'EPSG:4326',
           featureProjection: 'EPSG:3857',
         });
-        if (geom) {
-          if (geom.getType() === 'Point') {
+        const fallbackExtent = fallbackGeom?.getExtent();
+        if (fallbackGeom && fallbackExtent && !fallbackExtent.some(isNaN) && fallbackExtent.every(isFinite)) {
+          const fbType = fallbackGeom.getType();
+          if (fbType === 'Point') {
             this.map.getView().animate({
-              center: (geom as Point).getCoordinates(),
-              zoom: 18,
+              center: (fallbackGeom as Point).getCoordinates(),
+              zoom: Math.max(this.map.getView().getZoom() ?? 0, 17),
               duration: 600,
             });
           } else {
-            this.map.getView().fit(geom.getExtent(), {
+            const fbMaxZoom = (layerName === 'states' || layerName === 'districts') ? 10 : 16;
+            this.map.getView().fit(fallbackExtent, {
               padding: [60, 60, 60, 60],
-              maxZoom: 16,
+              maxZoom: fbMaxZoom,
               duration: 600,
             });
           }
@@ -1483,7 +1807,32 @@ export class OpenLayersService {
       type,
     });
 
+    this.currentDrawInteraction = draw;
+    this.drawRedoCoordinates = [];
+    editSessionHistory.startSession('create', null);
+
+    draw.on('drawstart', (event) => {
+      this.currentDrawSketchFeature = event.feature;
+      const geom = event.feature.getGeometry();
+      if (geom) {
+        geom.on('change', () => {
+          const geomType = geom.getType();
+          if (geomType === 'LineString' || geomType === 'Polygon') {
+            const coords = (geom as any).getCoordinates();
+            const list = geomType === 'Polygon' ? coords[0] : coords;
+            if (list && list.length > 0) {
+              editSessionHistory.pushSnapshot(JSON.parse(JSON.stringify(list)));
+            }
+          }
+        });
+      }
+    });
+
     draw.on('drawend', (event) => {
+      this.currentDrawSketchFeature = null;
+      this.currentDrawInteraction = null;
+      this.drawRedoCoordinates = [];
+      editSessionHistory.clearSession();
       const geojsonFeature = new GeoJSON().writeFeatureObject(event.feature, {
         dataProjection:    'EPSG:4326',
         featureProjection: 'EPSG:3857',
@@ -1507,98 +1856,117 @@ export class OpenLayersService {
 
   activateSelect(onSelect: (feature: any, layerName: string) => void) {
     this.savedSelectCallback = onSelect;
-    const select = new Select({
-      layers: [
-        this.streetlightsWfsLayer,
-        this.roadsWfsLayer,
-        this.zonesWfsLayer,
-        this.statesWfsLayer,
-        this.districtsWfsLayer,
-      ],
-      hitTolerance: 6,
-    });
+    this.activateInteraction([]);
+    this.cleanupDynamicSelect();
 
-    select.on('select', (event) => {
-      const selectedFeature = event.selected[0];
-      if (selectedFeature) {
-        const geojsonFeature = new GeoJSON().writeFeatureObject(selectedFeature, {
+    if (!this.map) return;
+
+    // Use singleclick with prioritized hit detection across layer types:
+    // Streetlights (Point) > Roads (LineString) > Zones (Local Polygon) > Dynamic Layers > Districts > States
+    this.dynamicSelectKey = this.map.on('singleclick', async (evt) => {
+      if (!this.map) return;
+
+      const candidates: { feature: Feature; layerName: string; priority: number }[] = [];
+
+      this.map.forEachFeatureAtPixel(
+        evt.pixel,
+        (feature, layer) => {
+          if (!feature || !layer) return;
+
+          let layerName = '';
+          let priority = 0;
+
+          if (layer === this.streetlightsWfsLayer && this.isLayerVisible('streetlights')) {
+            layerName = 'streetlights';
+            priority = 100; // Point features: highest priority
+          } else if (layer === this.roadsWfsLayer && this.isLayerVisible('roads')) {
+            layerName = 'roads';
+            priority = 80; // Line features: high priority
+          } else if (layer === this.zonesWfsLayer && this.isLayerVisible('zones')) {
+            layerName = 'zones';
+            priority = 60; // Ward polygons: medium priority
+          } else if (layer === this.dynamicVectorLayer) {
+            layerName = this.selectedLayerName || 'dynamic';
+            priority = 50; // Dynamic imported layers
+          } else if (layer === this.districtsWfsLayer && this.isLayerVisible('districts')) {
+            layerName = 'districts';
+            priority = 30; // District boundaries: lower priority
+          } else if (layer === this.statesWfsLayer && this.isLayerVisible('states')) {
+            layerName = 'states';
+            priority = 10; // State boundaries: lowest priority
+          }
+
+          if (layerName) {
+            const rawId = String(parseFeatureId((feature as any).getId()) ?? (feature as any).getId());
+            if (!this.hiddenFeatureIds[layerName]?.has(rawId)) {
+              candidates.push({ feature: feature as Feature, layerName, priority });
+            }
+          }
+        },
+        { hitTolerance: 12 }
+      );
+
+      if (candidates.length > 0) {
+        // Sort candidates descending by priority so points and lines always win over background polygons
+        candidates.sort((a, b) => b.priority - a.priority);
+        const top = candidates[0];
+
+        const geojsonFeature = new GeoJSON().writeFeatureObject(top.feature, {
           dataProjection:    'EPSG:4326',
           featureProjection: 'EPSG:3857',
         });
 
-        let layerName = 'streetlights';
-        if (geojsonFeature.id && String(geojsonFeature.id).startsWith('roads')) layerName = 'roads';
-        if (geojsonFeature.id && String(geojsonFeature.id).startsWith('zones')) layerName = 'zones';
-        if (geojsonFeature.id && String(geojsonFeature.id).startsWith('states')) layerName = 'states';
-        if (geojsonFeature.id && String(geojsonFeature.id).startsWith('districts')) layerName = 'districts';
-
-        // Apply glow immediately on select
-        this.setSelectedFeature(layerName, geojsonFeature.id ?? null);
-        onSelect(geojsonFeature, layerName);
-      } else {
-        // Only clear if we didn't click on a dynamic layer
-        // We handle clearing below in the singleclick if nothing was hit
+        // Always apply glow and fire onSelect — even if same feature clicked again
+        this.setSelectedFeature(top.layerName, geojsonFeature.id ?? null, geojsonFeature);
+        onSelect(geojsonFeature, top.layerName);
+        return;
       }
-    });
 
-    this.activateInteraction([select]);
+      // If no vector feature hit, check visible dynamic WMS layers via GetFeatureInfo
+      const viewResolution = this.map.getView().getResolution();
+      const viewProjection = this.map.getView().getProjection();
 
-    // Synchronously clean up previous dynamic select listener
-    this.cleanupDynamicSelect();
+      let hitDynamic = false;
+      for (const [layerName, layer] of Object.entries(this.layers)) {
+        if (!['states', 'districts', 'zones', 'roads', 'streetlights'].includes(layerName) && layer.getVisible()) {
+          const source = layer.getSource();
+          if (source && (source as any).getFeatureInfoUrl) {
+            const url = (source as any).getFeatureInfoUrl(
+              evt.coordinate,
+              viewResolution,
+              viewProjection,
+              { 'INFO_FORMAT': 'application/json', 'FEATURE_COUNT': 1 }
+            );
 
-    if (this.map) {
-      this.dynamicSelectKey = this.map.on('singleclick', async (evt) => {
-        // If the WFS select interaction handled it, don't do anything
-        if (select.getFeatures().getLength() > 0) return;
-        
-        if (!this.map) return;
+            if (url) {
+              try {
+                const res = await fetch(url);
+                if (res.ok) {
+                  const data = await res.json();
+                  if (data.features && data.features.length > 0) {
+                    const selectedFeature = data.features[0];
+                    hitDynamic = true;
 
-        const viewResolution = this.map.getView().getResolution();
-        const viewProjection = this.map.getView().getProjection();
-
-        // Check visible dynamic layers
-        let hitDynamic = false;
-        for (const [layerName, layer] of Object.entries(this.layers)) {
-          if (!['states', 'districts', 'zones', 'roads', 'streetlights'].includes(layerName) && layer.getVisible()) {
-            const source = layer.getSource();
-            if (source && (source as any).getFeatureInfoUrl) {
-              const url = (source as any).getFeatureInfoUrl(
-                evt.coordinate,
-                viewResolution,
-                viewProjection,
-                { 'INFO_FORMAT': 'application/json', 'FEATURE_COUNT': 1 }
-              );
-              
-              if (url) {
-                try {
-                  const res = await fetch(url);
-                  if (res.ok) {
-                    const data = await res.json();
-                    if (data.features && data.features.length > 0) {
-                      const selectedFeature = data.features[0];
-                      hitDynamic = true;
-                      
-                      // Highlight the temporary feature
-                      this.setSelectedFeature(layerName, selectedFeature.id, selectedFeature);
-                      onSelect(selectedFeature, layerName);
-                      break; // Only select top-most hit
-                    }
+                    // Highlight the temporary feature
+                    this.setSelectedFeature(layerName, selectedFeature.id, selectedFeature);
+                    onSelect(selectedFeature, layerName);
+                    break; // Only select top-most hit
                   }
-                } catch (err) {
-                  console.error('WMS GetFeatureInfo error:', err);
                 }
+              } catch (err) {
+                console.error('WMS GetFeatureInfo error:', err);
               }
             }
           }
         }
-        
-        // If neither WFS nor WMS returned a feature, clear selection
-        if (!hitDynamic && select.getFeatures().getLength() === 0) {
-           this.setSelectedFeature(null, null);
-           onSelect(null, '');
-        }
-      });
-    }
+      }
+
+      // If neither WFS nor WMS returned a feature, clear selection
+      if (!hitDynamic) {
+        this.setSelectedFeature(null, null);
+        onSelect(null, '');
+      }
+    });
   }
 
   activateModify(
@@ -1661,6 +2029,12 @@ export class OpenLayersService {
     this.onVertexEditGeometryChange = onGeometryChange;
     this.onVertexEditCancelCallback = onCancel;
 
+    const initialGeomGeoJson = new GeoJSON().writeGeometryObject(geom, {
+      dataProjection: 'EPSG:4326',
+      featureProjection: 'EPSG:3857',
+    });
+    editSessionHistory.startSession('vertex_edit', initialGeomGeoJson);
+
     const geomType = geom.getType();
 
     // 4. Point feature (Streetlights): Position Edit behavior
@@ -1682,8 +2056,11 @@ export class OpenLayersService {
 
       translate.on('translateend', () => {
         const curGeom = this.getVertexEditCurrentGeometry();
-        if (curGeom && this.onVertexEditGeometryChange) {
-          this.onVertexEditGeometryChange(curGeom);
+        if (curGeom) {
+          editSessionHistory.pushSnapshot(curGeom);
+          if (this.onVertexEditGeometryChange) {
+            this.onVertexEditGeometryChange(curGeom);
+          }
         }
       });
 
@@ -1767,6 +2144,7 @@ export class OpenLayersService {
       this.vertexEditFeature.setStyle(styles);
     };
 
+    this.updateVertexEditStyles = updateFeatureStyle;
     updateFeatureStyle();
 
     const editFeatures = new Collection<Feature>([feature!]);
@@ -1788,8 +2166,11 @@ export class OpenLayersService {
       this.selectedVertexCoord = null;
       updateFeatureStyle();
       const current = this.getVertexEditCurrentGeometry();
-      if (current && this.onVertexEditGeometryChange) {
-        this.onVertexEditGeometryChange(current);
+      if (current) {
+        editSessionHistory.pushSnapshot(current);
+        if (this.onVertexEditGeometryChange) {
+          this.onVertexEditGeometryChange(current);
+        }
       }
     });
 
@@ -1874,8 +2255,11 @@ export class OpenLayersService {
         this.selectedVertexCoord = null;
         this.vertexEditFeature.changed();
         const cur = this.getVertexEditCurrentGeometry();
-        if (cur && this.onVertexEditGeometryChange) {
-          this.onVertexEditGeometryChange(cur);
+        if (cur) {
+          editSessionHistory.pushSnapshot(cur);
+          if (this.onVertexEditGeometryChange) {
+            this.onVertexEditGeometryChange(cur);
+          }
         }
         return true;
       }
@@ -1903,8 +2287,11 @@ export class OpenLayersService {
         this.selectedVertexCoord = null;
         this.vertexEditFeature.changed();
         const cur = this.getVertexEditCurrentGeometry();
-        if (cur && this.onVertexEditGeometryChange) {
-          this.onVertexEditGeometryChange(cur);
+        if (cur) {
+          editSessionHistory.pushSnapshot(cur);
+          if (this.onVertexEditGeometryChange) {
+            this.onVertexEditGeometryChange(cur);
+          }
         }
         return true;
       }
@@ -1923,12 +2310,124 @@ export class OpenLayersService {
     });
   }
 
+  setVertexEditGeometry(geometryGeoJson: any, pushToHistory = false) {
+    if (!this.vertexEditFeature || !geometryGeoJson) return;
+    const olGeom = new GeoJSON().readGeometry(geometryGeoJson, {
+      dataProjection: 'EPSG:4326',
+      featureProjection: 'EPSG:3857',
+    });
+    this.vertexEditFeature.setGeometry(olGeom);
+    this.selectedVertexCoord = null;
+    this.vertexEditFeature.changed();
+    if (this.updateVertexEditStyles) {
+      this.updateVertexEditStyles();
+    }
+    if (pushToHistory) {
+      editSessionHistory.pushSnapshot(geometryGeoJson);
+    }
+    if (this.onVertexEditGeometryChange) {
+      this.onVertexEditGeometryChange(geometryGeoJson);
+    }
+  }
+
+  undoVertexEdit(): boolean {
+    if (!editSessionHistory.canUndo()) return false;
+    const prevGeom = editSessionHistory.undo();
+    if (prevGeom) {
+      this.setVertexEditGeometry(prevGeom);
+      return true;
+    }
+    return false;
+  }
+
+  redoVertexEdit(): boolean {
+    if (!editSessionHistory.canRedo()) return false;
+    const nextGeom = editSessionHistory.redo();
+    if (nextGeom) {
+      this.setVertexEditGeometry(nextGeom);
+      return true;
+    }
+    return false;
+  }
+
+  undoDrawPoint(): boolean {
+    if (editSessionHistory.canUndo()) {
+      if (this.currentDrawInteraction) {
+        try {
+          const sketchGeom = this.currentDrawSketchFeature?.getGeometry();
+          if (sketchGeom) {
+            const type = sketchGeom.getType();
+            if (type === 'LineString' || type === 'Polygon') {
+              const coords = (sketchGeom as any).getCoordinates();
+              const list = type === 'Polygon' ? coords[0] : coords;
+              if (list && list.length > 2) {
+                const removed = list[list.length - 2];
+                this.drawRedoCoordinates.push(removed);
+              }
+            }
+          }
+          this.currentDrawInteraction.removeLastPoint();
+        } catch (err) {
+          console.warn('undoDrawPoint error:', err);
+        }
+      }
+      editSessionHistory.undo();
+      return true;
+    }
+    return false;
+  }
+
+  redoDrawPoint(): boolean {
+    if (editSessionHistory.canRedo()) {
+      if (this.currentDrawInteraction && this.drawRedoCoordinates.length > 0) {
+        const coord = this.drawRedoCoordinates.pop();
+        if (coord) {
+          this.currentDrawInteraction.appendCoordinates([coord]);
+        }
+      }
+      editSessionHistory.redo();
+      return true;
+    }
+    return false;
+  }
+
+  undoMove(): boolean {
+    if (!editSessionHistory.canUndo() || !this.currentTranslateTargetFeature) return false;
+    const prevGeom = editSessionHistory.undo();
+    if (prevGeom) {
+      const olGeom = new GeoJSON().readGeometry(prevGeom, {
+        dataProjection: 'EPSG:4326',
+        featureProjection: 'EPSG:3857',
+      });
+      this.currentTranslateTargetFeature.setGeometry(olGeom);
+      this.currentTranslateTargetFeature.changed();
+      return true;
+    }
+    return false;
+  }
+
+  redoMove(): boolean {
+    if (!editSessionHistory.canRedo() || !this.currentTranslateTargetFeature) return false;
+    const nextGeom = editSessionHistory.redo();
+    if (nextGeom) {
+      const olGeom = new GeoJSON().readGeometry(nextGeom, {
+        dataProjection: 'EPSG:4326',
+        featureProjection: 'EPSG:3857',
+      });
+      this.currentTranslateTargetFeature.setGeometry(olGeom);
+      this.currentTranslateTargetFeature.changed();
+      return true;
+    }
+    return false;
+  }
+
   cancelVertexEdit() {
     if (this.vertexEditFeature && this.vertexEditOriginalGeometry) {
       this.vertexEditFeature.setGeometry(this.vertexEditOriginalGeometry.clone());
       this.vertexEditFeature.setStyle(undefined);
       this.vertexEditFeature.changed();
     }
+    editSessionHistory.clearSession();
     const cancelCb = this.onVertexEditCancelCallback;
     this.cleanupVertexEdit();
     if (cancelCb) {
@@ -1942,6 +2441,7 @@ export class OpenLayersService {
       this.vertexEditFeature.setStyle(undefined);
       this.vertexEditFeature.changed();
     }
+    editSessionHistory.clearSession();
     this.cleanupVertexEdit();
     return finalGeom;
   }
@@ -1960,6 +2460,8 @@ export class OpenLayersService {
       this.map.un('click', this.vertexEditMapClickListener);
       this.vertexEditMapClickListener = null;
     }
+    this.updateVertexEditStyles = null;
+    editSessionHistory.clearSession();
     this.vertexEditFeature = null;
     this.vertexEditOriginalGeometry = null;
     this.selectedVertexCoord = null;
@@ -1981,6 +2483,7 @@ export class OpenLayersService {
     layerName: string,
     onTranslateEnd: (feature: any, rollback: () => void) => void,
     featureId?: string | number | null,
+    initialGeoJson?: any,
   ) {
     let targetLayer: VectorLayer<any> | null = null;
     let initialFeature: Feature | null = null;
@@ -2003,12 +2506,34 @@ export class OpenLayersService {
       if (isCoreLayer) {
         initialFeature = this.getWfsFeature(layerName, featureId);
       } else {
-        initialFeature = this.dynamicVectorSource.getFeatureById(featureId);
+        initialFeature = (this.dynamicVectorSource.getFeatureById(featureId) as Feature) || null;
+        if (!initialFeature && initialGeoJson) {
+          const rawFeature = new GeoJSON().readFeature(initialGeoJson, {
+            dataProjection: 'EPSG:4326',
+            featureProjection: 'EPSG:3857'
+          });
+          const dynamicFeat: Feature = (Array.isArray(rawFeature) ? rawFeature[0] : rawFeature) as Feature;
+          if (!dynamicFeat.getId() && featureId) {
+            dynamicFeat.setId(featureId);
+          }
+          this.dynamicVectorSource.addFeature(dynamicFeat);
+          initialFeature = dynamicFeat;
+        }
       }
       
       if (initialFeature) {
         select.getFeatures().push(initialFeature);
       }
+    }
+
+    this.currentTranslateTargetFeature = initialFeature;
+    const initGeom = initialFeature?.getGeometry();
+    if (initGeom) {
+      const initGeoJson = new GeoJSON().writeGeometryObject(initGeom, {
+        dataProjection: 'EPSG:4326',
+        featureProjection: 'EPSG:3857',
+      });
+      editSessionHistory.startSession('move', initGeoJson);
     }
 
     const translate = new Translate({
@@ -2024,6 +2549,7 @@ export class OpenLayersService {
       const f = fList[0] || targetFeature;
       if (f) {
         targetFeature = f;
+        this.currentTranslateTargetFeature = f;
         const geom = f.getGeometry();
         if (geom) {
           originalGeometryClone = geom.clone();
@@ -2036,6 +2562,16 @@ export class OpenLayersService {
       if (Array.isArray(fList[0])) fList = fList[0];
       const translatedFeature = fList[0] || targetFeature;
       if (translatedFeature) {
+        this.currentTranslateTargetFeature = translatedFeature;
+        const curGeom = translatedFeature.getGeometry();
+        if (curGeom) {
+          const curGeomGeoJson = new GeoJSON().writeGeometryObject(curGeom, {
+            dataProjection: 'EPSG:4326',
+            featureProjection: 'EPSG:3857',
+          });
+          editSessionHistory.pushSnapshot(curGeomGeoJson);
+        }
+
         const backupGeom = originalGeometryClone ? originalGeometryClone.clone() : null;
         const rollback = () => {
           if (backupGeom && translatedFeature) {
@@ -2056,10 +2592,56 @@ export class OpenLayersService {
   }
 
   cancelInteraction() {
+    this.currentDrawSketchFeature = null;
+    this.currentDrawInteraction = null;
+    this.drawRedoCoordinates = [];
+    this.currentTranslateTargetFeature = null;
+    editSessionHistory.clearSession();
     this.cleanupDynamicSelect();
     this.activateInteraction(null);
     this.drawSource.clear();
+
+    // Re-attach the singleclick select listener so the user can keep clicking features
+    if (this.savedSelectCallback && this.map) {
+      this.dynamicSelectKey = this.map.on('singleclick', async (evt) => {
+        if (!this.map) return;
+        const candidates: { feature: Feature; layerName: string; priority: number }[] = [];
+        this.map.forEachFeatureAtPixel(
+          evt.pixel,
+          (feature, layer) => {
+            if (!feature || !layer) return;
+            let layerName = '';
+            let priority = 0;
+            if (layer === this.streetlightsWfsLayer && this.isLayerVisible('streetlights')) { layerName = 'streetlights'; priority = 100; }
+            else if (layer === this.roadsWfsLayer && this.isLayerVisible('roads')) { layerName = 'roads'; priority = 80; }
+            else if (layer === this.zonesWfsLayer && this.isLayerVisible('zones')) { layerName = 'zones'; priority = 60; }
+            else if (layer === this.dynamicVectorLayer) { layerName = this.selectedLayerName || 'dynamic'; priority = 50; }
+            else if (layer === this.districtsWfsLayer && this.isLayerVisible('districts')) { layerName = 'districts'; priority = 30; }
+            else if (layer === this.statesWfsLayer && this.isLayerVisible('states')) { layerName = 'states'; priority = 10; }
+            if (layerName) {
+              const rawId = String(parseFeatureId((feature as any).getId()) ?? (feature as any).getId());
+              if (!this.hiddenFeatureIds[layerName]?.has(rawId)) {
+                candidates.push({ feature: feature as Feature, layerName, priority });
+              }
+            }
+          },
+          { hitTolerance: 12 }
+        );
+        if (candidates.length > 0) {
+          candidates.sort((a, b) => b.priority - a.priority);
+          const top = candidates[0];
+          const geojsonFeature = new GeoJSON().writeFeatureObject(top.feature, {
+            dataProjection: 'EPSG:4326', featureProjection: 'EPSG:3857',
+          });
+          this.setSelectedFeature(top.layerName, geojsonFeature.id ?? null, geojsonFeature);
+          this.savedSelectCallback!(geojsonFeature, top.layerName);
+        }
+      });
+    }
   }
 }
 
 export const olService = new OpenLayersService();
+if (typeof window !== 'undefined') {
+  (window as any).__olService = olService;
+}

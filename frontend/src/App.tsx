@@ -11,6 +11,7 @@ import {
   IconCompass,
   IconUndo,
   IconRedo,
+  IconTable,
 } from './components/Icons';
 import { olService, BasemapId } from './lib/openlayers';
 import { useMapInteractions } from './hooks/useMapInteractions';
@@ -18,6 +19,8 @@ import UnifiedLegend from './components/UnifiedLegend';
 import { DynamicLayer } from './components/DynamicLegend';
 import { apiClient } from './lib/api';
 import { useHistory } from './hooks/useHistory';
+import { useEditSessionHistory } from './hooks/useEditSessionHistory';
+import AttributeTable from './components/AttributeTable';
 
 function App() {
   const [isDarkMode, setIsDarkMode] = useState(true);
@@ -25,6 +28,8 @@ function App() {
   const [mapRotation, setMapRotation] = useState(0);
   const [isBasemapModalOpen, setIsBasemapModalOpen] = useState(false);
   const [currentBasemap, setCurrentBasemap] = useState<BasemapId>('carto_dark');
+  const [isAttributeTableOpen, setIsAttributeTableOpen] = useState(false);
+
 
   useEffect(() => {
     return olService.onBasemapChange((id) => {
@@ -40,11 +45,11 @@ function App() {
   const [dynamicLayers, setDynamicLayers] = useState<DynamicLayer[]>([]);
   const [dynamicVisibility, setDynamicVisibility] = useState<Record<string, boolean>>({});
   const [coreVisibility, setCoreVisibility] = useState<Record<string, boolean>>({
-    streetlights: true,
-    roads: true,
-    zones: true,
-    states: true,
-    districts: true,
+    streetlights: false,
+    roads: false,
+    zones: false,
+    states: false,
+    districts: false,
   });
 
   const handleToggleCoreLayer = useCallback((layerName: string, isVisible: boolean) => {
@@ -63,9 +68,9 @@ function App() {
     });
   }, []);
 
-  const refreshDynamicLayers = useCallback(async () => {
+  const refreshDynamicLayers = useCallback(async (force = true) => {
     try {
-      const layers = await apiClient.geoserver.getLayers();
+      const layers = await apiClient.geoserver.getLayers(force);
       const coreLayerNames = ['states', 'districts', 'zones', 'roads', 'streetlights'];
       const discovered = (layers || []).filter((l: any) => !coreLayerNames.includes(l.name));
       setDynamicLayers(discovered);
@@ -107,17 +112,39 @@ function App() {
     handleFormSuccess,
     handleMoveStart,
     handleSelectFeature,
+    onSelectFeature,
+    deselectFeature,
     zoomToFeature,
-    zoomToLayer,
     startVertexEdit,
     finishVertexEdit,
     cancelVertexEdit,
     isSavingVertex,
     vertexEditError,
     currentVertexGeometry,
+    handleUndo,
+    handleRedo,
   } = useMapInteractions();
 
-  const { canUndo, canRedo, isBusy, handleUndo, handleRedo } = useHistory();
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      (window as any).__openAttributeTable = (layerName?: string) => {
+        if (layerName) setActiveLayer(layerName);
+        setIsAttributeTableOpen(true);
+      };
+      (window as any).__closeAttributeTable = () => setIsAttributeTableOpen(false);
+      (window as any).__isAttributeTableOpen = () => isAttributeTableOpen;
+      (window as any).__selectFeature = (feature: any, layerName: string) => {
+        onSelectFeature(feature, layerName);
+      };
+    }
+  }, [isAttributeTableOpen, onSelectFeature, setActiveLayer]);
+
+  const { canUndo: serverCanUndo, canRedo: serverCanRedo, isBusy } = useHistory();
+  const editSession = useEditSessionHistory();
+
+  const isEditingSessionActive = mode === 'vertex_edit' || mode === 'create' || mode === 'move' || editSession.isActive;
+  const effectiveCanUndo = isEditingSessionActive ? editSession.canUndo : serverCanUndo;
+  const effectiveCanRedo = isEditingSessionActive ? editSession.canRedo : serverCanRedo;
 
   // Stage E4: Global keyboard shortcuts (Ctrl+Z -> Undo, Ctrl+Y / Ctrl+Shift+Z -> Redo)
   useEffect(() => {
@@ -255,12 +282,12 @@ function App() {
             onMoveStart={handleMoveStart}
             onSuccess={handleFormSuccess}
             onCancel={cancelAction}
+            onDeselectFeature={deselectFeature}
             selectedZoneFeature={selectedZoneFeature}
             selectedRoadFeature={selectedRoadFeature}
             isDarkMode={isDarkMode}
             toggleTheme={toggleTheme}
             onZoomToFeature={zoomToFeature}
-            onZoomToLayer={zoomToLayer}
             onStartVertexEdit={startVertexEdit}
             onFinishVertexEdit={finishVertexEdit}
             onCancelVertexEdit={cancelVertexEdit}
@@ -275,6 +302,10 @@ function App() {
             onToggleCoreLayer={handleToggleCoreLayer}
             onUndo={handleUndo}
             onRedo={handleRedo}
+            onOpenAttributeTable={(layerName) => {
+              if (layerName) setActiveLayer(layerName);
+              setIsAttributeTableOpen(true);
+            }}
           />
         </aside>
 
@@ -324,15 +355,30 @@ function App() {
               >
                 <IconShare />
               </button>
-              <div className="map-ctrl-divider" />
+              <button
+                id="btn-map-table"
+                data-testid="map-table-btn"
+                className={`map-ctrl-btn ${isAttributeTableOpen ? 'active' : ''}`}
+                onClick={() => setIsAttributeTableOpen((prev) => !prev)}
+                title="Attribute Table"
+                aria-label="Attribute Table"
+              >
+                <IconTable width={16} height={16} />
+              </button>
+              <div
+                className="map-ctrl-divider"
+                id="map-undo-redo-divider"
+                style={{ display: isEditingSessionActive ? 'block' : 'none' }}
+              />
               <button
                 id="btn-map-undo"
                 data-testid="map-undo-btn"
                 className="map-ctrl-btn"
                 onClick={() => handleUndo()}
-                disabled={!canUndo || isBusy}
+                disabled={!effectiveCanUndo || isBusy}
                 title="Undo (Ctrl+Z)"
                 aria-label="Undo"
+                style={{ display: isEditingSessionActive ? 'flex' : 'none' }}
               >
                 <IconUndo width={16} height={16} />
               </button>
@@ -341,9 +387,10 @@ function App() {
                 data-testid="map-redo-btn"
                 className="map-ctrl-btn"
                 onClick={() => handleRedo()}
-                disabled={!canRedo || isBusy}
+                disabled={!effectiveCanRedo || isBusy}
                 title="Redo (Ctrl+Y)"
                 aria-label="Redo"
+                style={{ display: isEditingSessionActive ? 'flex' : 'none' }}
               >
                 <IconRedo width={16} height={16} />
               </button>
@@ -392,6 +439,19 @@ function App() {
             coreVisibility={coreVisibility}
             dynamicLayers={dynamicLayers}
             dynamicVisibility={dynamicVisibility}
+          />
+
+          {/* Generic GIS Attribute Table Dock */}
+          <AttributeTable
+            isOpen={isAttributeTableOpen}
+            onClose={() => setIsAttributeTableOpen(false)}
+            activeLayer={activeLayer}
+            setActiveLayer={setActiveLayer}
+            dynamicLayers={dynamicLayers}
+            coreVisibility={coreVisibility}
+            onSelectFeature={handleSelectFeature}
+            onZoomToFeature={zoomToFeature}
+            onError={setUiError}
           />
         </main>
 
