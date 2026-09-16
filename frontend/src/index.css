@@ -3585,6 +3585,11 @@ button {
   cursor: pointer;
 }
 
+.attr-page-size-select option {
+  background: #0F172A;
+  color: #F1F5F9;
+}
+
 .attr-error-banner {
   padding: 6px 16px;
   background: rgba(239, 68, 68, 0.2);

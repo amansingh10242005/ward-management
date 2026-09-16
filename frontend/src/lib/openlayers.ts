@@ -1410,6 +1410,44 @@ export class OpenLayersService {
               : (!isNaN(Number(rawId)) ? Number(rawId) : null));
 
         if (numericId !== null) {
+          // Optimization: Zoom instantly using backend extent before downloading heavy WFS geometry
+          try {
+            const fetchedExtent = await apiClient.spatial.getFeatureExtent(layerName, numericId);
+            if (fetchedExtent) {
+              this.map.getView().fit(fetchedExtent, {
+                padding: [60, 60, 60, 380], // padded for sidebar
+                duration: 800,
+                maxZoom: 18,
+              });
+              // We've already zoomed, but we still need the geometry for the neon glow.
+              // We don't await the WFS fetch so the zoom is instantaneous.
+              this.selectedFeatureId = featureId;
+              
+              // Only fetch glow geometry if it's not a massive state layer to avoid freezing the UI
+              if (layerName !== 'states') {
+                setTimeout(async () => {
+                  try {
+                    const cqlUrl = `${baseUrl}/${WORKSPACE}/ows?service=WFS&version=1.1.0&request=GetFeature&typeName=${WORKSPACE}:${layerName}&outputFormat=application/json&srsname=EPSG:3857&cql_filter=id=${numericId}`;
+                    const res = await fetch(cqlUrl);
+                    if (res.ok) {
+                      const data = await res.json();
+                      if (data.features && data.features.length > 0) {
+                        const rawFeature = data.features[0];
+                        const asyncFeature = this.addOrUpdateWfsFeatureFromGeoJson(layerName, featureId, rawFeature);
+                        if (asyncFeature && this.selectedFeatureId === featureId) {
+                          this.setSelectedFeature(layerName, featureId, rawFeature);
+                        }
+                      }
+                    }
+                  } catch (e) {}
+                }, 0);
+              }
+              return fallbackGeoJson;
+            }
+          } catch (err) {
+            console.warn('Backend extent fetch failed, falling back to WFS GetFeature:', err);
+          }
+
           try {
             const cqlUrl = `${baseUrl}/${WORKSPACE}/ows?service=WFS&version=1.1.0&request=GetFeature&typeName=${WORKSPACE}:${layerName}&outputFormat=application/json&srsname=EPSG:3857&cql_filter=id=${numericId}`;
             const res = await fetch(cqlUrl);

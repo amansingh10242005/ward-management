@@ -160,6 +160,11 @@ export const apiClient = {
       const data = await handleResponse<{ extent: [number, number, number, number] | null }>(res);
       return data.extent;
     },
+    getFeatureExtent: async (layerName: string, id: string | number): Promise<[number, number, number, number] | null> => {
+      const res = await fetch(`${API_BASE}/spatial/extent/${layerName}/${id}`);
+      const data = await handleResponse<{ extent: [number, number, number, number] | null }>(res);
+      return data.extent;
+    },
   },
 
   geoserver: {

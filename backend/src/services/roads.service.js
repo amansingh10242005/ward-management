@@ -55,7 +55,7 @@ export const roadsService = {
       INSERT INTO roads (name, category, geom, zone_id)
       VALUES ($1, $2, ST_SetSRID(ST_GeomFromGeoJSON($3), 4326), $4)
       RETURNING id, name, category AS type, zone_id, created_at, updated_at, ST_AsGeoJSON(geom) AS geom
-    `, [feature.properties.name, feature.properties.type, geoJsonStr, zoneId]);
+    `, [feature.properties.name, feature.properties.category || feature.properties.type, geoJsonStr, zoneId]);
     
     return mapRowToGeoJSONFeature(rows[0]);
   },
@@ -64,7 +64,7 @@ export const roadsService = {
     const geoJsonStr = JSON.stringify(feature.geometry);
     let zoneId = feature.properties?.zone_id;
     let name = feature.properties?.name;
-    let type = feature.properties?.type;
+    let type = feature.properties?.category || feature.properties?.type;
 
     if (!zoneId || !name) {
       const existing = await pool.query('SELECT name, category as type, zone_id FROM roads WHERE id = $1', [id]);

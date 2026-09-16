@@ -658,6 +658,7 @@ export default function TechSidebar({
                             if (onToggleDynamicLayer) {
                               onToggleDynamicLayer(layer.name, !isVisible);
                             }
+                            olService.zoomToDynamicLayerExtent(layer);
                           }} 
                           title={isVisible ? `Hide ${layer.title || layer.name}` : `Show ${layer.title || layer.name}`}
                         >

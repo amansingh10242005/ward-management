@@ -24,6 +24,8 @@ import { statesRouter } from './routes/states.routes.js';
 import { spatialRouter } from './routes/spatial.routes.js';
 import { geoserverRouter } from './routes/geoserver.routes.js';
 import { errorHandler } from './middleware/error-handler.middleware.js';
+import { pool } from './db/pool.js';
+
 
 const app = express();
 const PORT = process.env.PORT ?? 3001;
