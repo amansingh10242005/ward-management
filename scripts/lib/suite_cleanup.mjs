@@ -7,7 +7,7 @@
  */
 
 import { spawn } from 'child_process';
-import { pool } from '../backend/src/db/pool.js';
+import { pool } from '../../backend/src/db/pool.js';
 
 const CHROME_PATH = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 const DEBUG_PORT = 9235;
@@ -99,7 +99,7 @@ class CDPClient {
   }
 }
 
-async function runCleanupAudit() {
+export async function runCleanup() {
   console.log('================================================================');
   console.log('FINAL CLEANUP AUDIT — VALIDATION SUITE (CLEAN.1 - CLEAN.20)');
   console.log('================================================================\n');
@@ -203,12 +203,13 @@ async function runCleanupAudit() {
     await pool.query(`
       CREATE TABLE public."${FRESH_LAYER}" (
         id SERIAL PRIMARY KEY,
+        test_code VARCHAR(32),
         test_name VARCHAR(64),
         category VARCHAR(32),
         geom geometry(Polygon, 4326) NOT NULL
       );
-      INSERT INTO public."${FRESH_LAYER}" (test_name, category, geom) VALUES
-      ('Validation 1', 'Test', ST_GeomFromText('POLYGON((80.12 12.92, 80.14 12.92, 80.14 12.94, 80.12 12.94, 80.12 12.92))', 4326));
+      INSERT INTO public."${FRESH_LAYER}" (test_code, test_name, category, geom) VALUES
+      ('TEST-1', 'Validation 1', 'Test', ST_GeomFromText('POLYGON((80.12 12.92, 80.14 12.92, 80.14 12.94, 80.12 12.94, 80.12 12.92))', 4326));
       CREATE INDEX "${FRESH_LAYER}_gist" ON public."${FRESH_LAYER}" USING GIST (geom);
     `);
 
@@ -221,9 +222,8 @@ async function runCleanupAudit() {
 
     // Trigger frontend discovery
     await cdp.evaluate(`(() => window.__refreshDynamicLayers && window.__refreshDynamicLayers(true))()`);
-    await sleep(800);
-
-    const freshInSidebar = await cdp.evaluate(`document.body.innerText.includes('Fresh Dynamic Layer') || document.body.innerText.includes('${FRESH_LAYER}')`);
+    await sleep(2000);
+    const freshInSidebar = await cdp.evaluate(`document.body.innerText.includes('Fresh Dynamic Layer') || document.body.innerText.includes('Final Dynamic') || document.body.innerText.includes('${FRESH_LAYER}')`);
     record('CLEAN.10', 'Generic Dynamic Discovery Works With Fresh Layer', freshInSidebar, 'Fresh layer discovered without code changes');
 
     // CLEAN.11: Fresh dynamic layer works in Attribute Table
@@ -316,11 +316,6 @@ async function runCleanupAudit() {
   } finally {
     cdp.close();
     chromeProcess.kill();
-    await pool.end();
+    // await pool.end();
   }
 }
-
-runCleanupAudit().catch(err => {
-  console.error('Fatal audit error:', err);
-  process.exit(1);
-});

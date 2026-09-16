@@ -1,4 +1,4 @@
-import { pool } from '../backend/src/db/pool.js';
+import { pool } from '../../backend/src/db/pool.js';
 
 const GEOSERVER_URL = 'http://localhost:8080/geoserver';
 const WORKSPACE = 'ward';
@@ -10,7 +10,7 @@ async function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
 }
 
-async function runTest() {
+export async function runDiscovery() {
   console.log('=== PHASE 10: PROVING GENERIC DYNAMIC DISCOVERY ===');
 
   // 1. PostGIS table creation
@@ -90,8 +90,3 @@ async function runTest() {
 
   return { success: true };
 }
-
-runTest().catch(err => {
-  console.error('Test error:', err);
-  process.exit(1);
-});

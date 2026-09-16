@@ -16,7 +16,7 @@ import {
 import { olService, BasemapId } from './lib/openlayers';
 import { useMapInteractions } from './hooks/useMapInteractions';
 import UnifiedLegend from './components/UnifiedLegend';
-import { DynamicLayer } from './components/DynamicLegend';
+import { DynamicLayer } from './components/UnifiedLegend';
 import { apiClient } from './lib/api';
 import { useHistory } from './hooks/useHistory';
 import { useEditSessionHistory } from './hooks/useEditSessionHistory';

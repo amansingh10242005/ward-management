@@ -899,11 +899,17 @@ export class OpenLayersService {
 
     const isWorldExtent = (ext: any) => {
       if (!ext || !Array.isArray(ext) || ext.length < 4) return true;
-      return (ext[0] <= -18000000 && ext[2] >= 18000000) || (ext[1] <= -18000000 && ext[3] >= 18000000);
+      const [minx, miny, maxx, maxy] = ext;
+      // EPSG:4326 world bounds approx
+      if (minx <= -179 && maxx >= 179 && miny <= -89 && maxy >= 89) return true;
+      // EPSG:3857 world bounds approx
+      if (minx <= -18000000 && maxx >= 18000000) return true;
+      return false;
     };
 
+
     if (this.layerExtentsCache[layerName]) {
-      this.map.getView().fit(this.layerExtentsCache[layerName], { padding: [80, 80, 80, 80], duration: 800, maxZoom: 16 });
+      this.map.getView().fit(this.layerExtentsCache[layerName], { padding: [60, 60, 60, 380], duration: 800, maxZoom: 16 });
       return;
     }
 
@@ -917,10 +923,12 @@ export class OpenLayersService {
       const maxx = Number(box.maxx);
       const maxy = Number(box.maxy);
       if (!isNaN(minx) && !isNaN(miny) && !isNaN(maxx) && !isNaN(maxy)) {
-        const extent3857 = transformExtent([minx, miny, maxx, maxy], 'EPSG:4326', 'EPSG:3857') as [number, number, number, number];
-        this.layerExtentsCache[layerName] = extent3857;
-        this.map.getView().fit(extent3857, { padding: [80, 80, 80, 80], duration: 800, maxZoom: 16 });
-        return;
+        if (!isWorldExtent([minx, miny, maxx, maxy])) {
+          const extent3857 = transformExtent([minx, miny, maxx, maxy], 'EPSG:4326', 'EPSG:3857') as [number, number, number, number];
+          this.layerExtentsCache[layerName] = extent3857;
+          this.map.getView().fit(extent3857, { padding: [60, 60, 60, 380], duration: 800, maxZoom: 16 });
+          return;
+        }
       }
     }
 
@@ -932,12 +940,14 @@ export class OpenLayersService {
       const maxy = Number(nativeBox.maxy);
       const crs = String(nativeBox.crs || meta?.srs || 'EPSG:4326');
       if (!isNaN(minx) && !isNaN(miny) && !isNaN(maxx) && !isNaN(maxy)) {
-        const extent3857 = (crs.includes('3857') || crs.includes('900913'))
-          ? [minx, miny, maxx, maxy] as [number, number, number, number]
-          : transformExtent([minx, miny, maxx, maxy], crs, 'EPSG:3857') as [number, number, number, number];
-        this.layerExtentsCache[layerName] = extent3857;
-        this.map.getView().fit(extent3857, { padding: [80, 80, 80, 80], duration: 800, maxZoom: 16 });
-        return;
+        if (!isWorldExtent([minx, miny, maxx, maxy])) {
+          const extent3857 = (crs.includes('3857') || crs.includes('900913'))
+            ? [minx, miny, maxx, maxy] as [number, number, number, number]
+            : transformExtent([minx, miny, maxx, maxy], crs, 'EPSG:3857') as [number, number, number, number];
+          this.layerExtentsCache[layerName] = extent3857;
+          this.map.getView().fit(extent3857, { padding: [60, 60, 60, 380], duration: 800, maxZoom: 16 });
+          return;
+        }
       }
     }
 
@@ -945,13 +955,13 @@ export class OpenLayersService {
     const workspace = meta?.workspace || def?.workspace || WORKSPACE;
     const realExtent = await this.fetchRealLayerExtent(workspace, layerName);
     if (realExtent) {
-      this.map.getView().fit(realExtent, { padding: [80, 80, 80, 80], duration: 800, maxZoom: 16 });
+      this.map.getView().fit(realExtent, { padding: [60, 60, 60, 380], duration: 800, maxZoom: 16 });
       return;
     }
 
     // Safe fallback: Zoom to Chennai ward region (never Antarctica/world ocean)
     const chennaiWardExtent: [number, number, number, number] = [8910000, 1445000, 8935000, 1470000];
-    this.map.getView().fit(chennaiWardExtent, { padding: [80, 80, 80, 80], duration: 800, maxZoom: 14 });
+    this.map.getView().fit(chennaiWardExtent, { padding: [60, 60, 60, 380], duration: 800, maxZoom: 14 });
   }
 
   // ── Selected feature glow ────────────────────────────────────────────────────
@@ -1555,10 +1565,7 @@ export class OpenLayersService {
   // Pre-cached spatial bounds (EPSG:3857) to ensure instant zero-latency navigation without large WFS downloads
   private layerExtentsCache: Record<string, [number, number, number, number]> = {
     states: [7579624, 750000, 10842500, 4260000],       // All India
-    districts: [8482000, 896000, 8950000, 1528000],      // Tamil Nadu Region
-    zones: [8911000, 1442000, 8928000, 1459000],          // Tambaram Ward Zones
-    roads: [8913000, 1445000, 8925000, 1457000],          // Ward Road Network
-    streetlights: [8913000, 1445000, 8925000, 1457000],   // Streetlight Assets
+    districts: [7579624, 750000, 10842500, 4260000],    // All India
   };
 
   /**
@@ -1568,40 +1575,25 @@ export class OpenLayersService {
   async zoomToLayer(layerName: string) {
     if (!this.map) return;
 
-    // 1. If WFS vector source has loaded features, check if their extent is valid
-    const wfsSource = this.getWfsSource(layerName);
-    if (wfsSource) {
-      const features = wfsSource.getFeatures();
-      if (features.length > 0) {
-        const extent = wfsSource.getExtent();
-        if (extent && !extent.some(isNaN) && isFinite(extent[0]) && isFinite(extent[1])) {
-          this.map.getView().fit(extent, {
-            padding: [50, 50, 50, 50],
-            duration: 600,
-            maxZoom: layerName === 'streetlights' ? 18 : layerName === 'roads' ? 17 : 15,
-          });
-          return;
-        }
-      }
-    }
-
-    // 2. Use cached/configured layer bounds for instant safe navigation
+    // Use cached/configured layer bounds for instant safe navigation
     if (this.layerExtentsCache[layerName]) {
       this.map.getView().fit(this.layerExtentsCache[layerName], {
-        padding: [50, 50, 50, 50],
+        padding: [60, 60, 60, 380],
         duration: 600,
+        maxZoom: layerName === 'streetlights' ? 18 : layerName === 'roads' ? 17 : 15,
       });
       return;
     }
 
-    // 3. Fallback: try Backend API to get PostGIS bounds
+    // Fallback: try Backend API to get PostGIS bounds
     try {
       const extent = await apiClient.spatial.getExtent(layerName);
       if (extent) {
         this.layerExtentsCache[layerName] = extent;
         this.map.getView().fit(extent, {
-          padding: [50, 50, 50, 50],
+          padding: [60, 60, 60, 380],
           duration: 600,
+          maxZoom: layerName === 'streetlights' ? 18 : layerName === 'roads' ? 17 : 15,
         });
         return;
       }

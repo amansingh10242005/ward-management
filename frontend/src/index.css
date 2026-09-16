@@ -8,67 +8,67 @@
 :root {
   /* ── User Requested Theme Palette ─────────────────────────────────────── */
   --color-background: #08111B;
-  --color-sidebar:    #0D1925;
-  --color-panel:      #132333;
-  --color-border:     #263A4A;
-  --color-text:       #E8F1F5;
-  --color-secondary:  #8EA3B2;
-  --color-primary:    #19B5E6;
-  --color-hover:      #35C7F0;
-  --color-selection:  #19B5E6;
-  --color-success:    #19B5E6;
-  --color-warning:    #F5B84B;
-  --color-error:      #EF6262;
+  --color-sidebar: #0D1925;
+  --color-panel: #132333;
+  --color-border: #263A4A;
+  --color-text: #E8F1F5;
+  --color-secondary: #8EA3B2;
+  --color-primary: #19B5E6;
+  --color-hover: #35C7F0;
+  --color-selection: #19B5E6;
+  --color-success: #19B5E6;
+  --color-warning: #F5B84B;
+  --color-error: #EF6262;
 
   /* HUD Specific Tokens */
-  --hud-bg:           #0D1925;
-  --hud-card-bg:      #132333;
-  --hud-card-border:  #19B5E6;
-  --hud-neon:         #19B5E6;
-  --hud-neon-hover:   #35C7F0;
-  --hud-neon-glow:    rgba(25, 181, 230, 0.35);
-  --hud-border:       #263A4A;
-  --hud-font-mono:    'JetBrains Mono', monospace;
-  --sidebar-width:    270px;
+  --hud-bg: #0D1925;
+  --hud-card-bg: #132333;
+  --hud-card-border: #19B5E6;
+  --hud-neon: #19B5E6;
+  --hud-neon-hover: #35C7F0;
+  --hud-neon-glow: rgba(25, 181, 230, 0.35);
+  --hud-border: #263A4A;
+  --hud-font-mono: 'JetBrains Mono', monospace;
+  --sidebar-width: 270px;
 
   /* Backgrounds */
-  --bg-root:          #08111B;
-  --bg-surface:       #0D1925;
-  --bg-surface-2:     #132333;
+  --bg-root: #08111B;
+  --bg-surface: #0D1925;
+  --bg-surface-2: #132333;
   --bg-surface-hover: rgba(53, 199, 240, 0.10);
-  --bg-surface-active:rgba(25, 181, 230, 0.18);
+  --bg-surface-active: rgba(25, 181, 230, 0.18);
 
   /* Borders */
-  --border-subtle:    rgba(38, 58, 74, 0.5);
-  --border-light:     #263A4A;
-  --border-medium:    #263A4A;
-  --border-focus:     #19B5E6;
+  --border-subtle: rgba(38, 58, 74, 0.5);
+  --border-light: #263A4A;
+  --border-medium: #263A4A;
+  --border-focus: #19B5E6;
 
   /* Text */
-  --text-primary:     #E8F1F5;
-  --text-secondary:   #8EA3B2;
-  --text-muted:       #8EA3B2;
+  --text-primary: #E8F1F5;
+  --text-secondary: #8EA3B2;
+  --text-muted: #8EA3B2;
 
   /* Accent — primary cyan */
-  --accent:           #19B5E6;
-  --accent-hover:     #35C7F0;
-  --accent-subtle:    rgba(25, 181, 230, 0.15);
-  --accent-glow:      rgba(25, 181, 230, 0.35);
+  --accent: #19B5E6;
+  --accent-hover: #35C7F0;
+  --accent-subtle: rgba(25, 181, 230, 0.15);
+  --accent-glow: rgba(25, 181, 230, 0.35);
 
   /* Layer-type palette */
-  --color-streetlight:        #F5B84B;
+  --color-streetlight: #F5B84B;
   --color-streetlight-subtle: rgba(245, 184, 75, 0.15);
-  --color-road:               #19B5E6;
-  --color-road-subtle:        rgba(25, 181, 230, 0.15);
-  --color-zone:               #38BDF8;
-  --color-zone-subtle:        rgba(56, 189, 248, 0.15);
+  --color-road: #19B5E6;
+  --color-road-subtle: rgba(25, 181, 230, 0.15);
+  --color-zone: #38BDF8;
+  --color-zone-subtle: rgba(56, 189, 248, 0.15);
 
   /* Semantic */
-  --danger:           #EF6262;
-  --danger-hover:     #e04d4d;
-  --danger-subtle:    rgba(239, 98, 98, 0.15);
-  --success:          #19B5E6;
-  --warning:          #F5B84B;
+  --danger: #EF6262;
+  --danger-hover: #e04d4d;
+  --danger-subtle: rgba(239, 98, 98, 0.15);
+  --success: #19B5E6;
+  --warning: #F5B84B;
 
   /* Typography */
   --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
@@ -83,16 +83,16 @@
   --space-8: 32px;
 
   /* Radii */
-  --radius-sm:   4px;
-  --radius-md:   8px;
-  --radius-lg:   12px;
-  --radius-xl:   16px;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
   --radius-full: 9999px;
 
   /* Shadows */
-  --shadow-sm:  0 1px 3px rgba(0,0,0,0.6);
-  --shadow-md:  0 4px 12px rgba(0,0,0,0.5);
-  --shadow-lg:  0 8px 24px rgba(0,0,0,0.6);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.6);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.6);
   --shadow-glow-accent: 0 0 16px rgba(25, 181, 230, 0.4);
 }
 
@@ -103,68 +103,68 @@
 [data-theme="light"] {
   /* ── 12-Role Light Theme Palette ─────────────────────────────────────── */
   --color-background: #F4F7FA;
-  --color-sidebar:    #FFFFFF;
-  --color-panel:      #F8FAFC;
-  --color-border:     #D8E2EA;
-  --color-text:       #0F1E2E;
-  --color-secondary:  #475D6E;
-  --color-primary:    #0284C7;
-  --color-hover:      #0369A1;
-  --color-selection:  #0284C7;
-  --color-success:    #0284C7;
-  --color-warning:    #D97706;
-  --color-error:      #DC2626;
+  --color-sidebar: #FFFFFF;
+  --color-panel: #F8FAFC;
+  --color-border: #D8E2EA;
+  --color-text: #0F1E2E;
+  --color-secondary: #475D6E;
+  --color-primary: #0284C7;
+  --color-hover: #0369A1;
+  --color-selection: #0284C7;
+  --color-success: #0284C7;
+  --color-warning: #D97706;
+  --color-error: #DC2626;
 
   /* HUD Specific Tokens for Light Theme */
-  --hud-bg:           #FFFFFF;
-  --hud-card-bg:      #F8FAFC;
-  --hud-card-border:  #D8E2EA;
-  --hud-neon:         #0284C7;
-  --hud-neon-hover:   #0369A1;
-  --hud-neon-glow:    rgba(2, 132, 199, 0.22);
-  --hud-border:       #D8E2EA;
+  --hud-bg: #FFFFFF;
+  --hud-card-bg: #F8FAFC;
+  --hud-card-border: #D8E2EA;
+  --hud-neon: #0284C7;
+  --hud-neon-hover: #0369A1;
+  --hud-neon-glow: rgba(2, 132, 199, 0.22);
+  --hud-border: #D8E2EA;
 
   /* Backgrounds */
-  --bg-root:          #F4F7FA;
-  --bg-surface:       #FFFFFF;
-  --bg-surface-2:     #F8FAFC;
+  --bg-root: #F4F7FA;
+  --bg-surface: #FFFFFF;
+  --bg-surface-2: #F8FAFC;
   --bg-surface-hover: #EDF2F7;
-  --bg-surface-active:#E2E8F0;
+  --bg-surface-active: #E2E8F0;
 
   /* Borders */
-  --border-subtle:    rgba(0, 0, 0, 0.08);
-  --border-light:     #E2E8F0;
-  --border-medium:    #CBD5E1;
-  --border-focus:     #0284C7;
+  --border-subtle: rgba(0, 0, 0, 0.08);
+  --border-light: #E2E8F0;
+  --border-medium: #CBD5E1;
+  --border-focus: #0284C7;
 
   /* Text */
-  --text-primary:     #0F1E2E;
-  --text-secondary:   #475D6E;
-  --text-muted:       #64748B;
+  --text-primary: #0F1E2E;
+  --text-secondary: #475D6E;
+  --text-muted: #64748B;
 
   /* Accent */
-  --accent:           #0284C7;
-  --accent-hover:     #0369A1;
-  --accent-subtle:    rgba(2, 132, 199, 0.12);
-  --accent-glow:      rgba(2, 132, 199, 0.22);
+  --accent: #0284C7;
+  --accent-hover: #0369A1;
+  --accent-subtle: rgba(2, 132, 199, 0.12);
+  --accent-glow: rgba(2, 132, 199, 0.22);
 
   /* Layer-type palette */
-  --color-streetlight:        #D97706;
+  --color-streetlight: #D97706;
   --color-streetlight-subtle: rgba(217, 119, 6, 0.12);
-  --color-road:               #0284C7;
-  --color-road-subtle:        rgba(2, 132, 199, 0.12);
-  --color-zone:               #0284C7;
-  --color-zone-subtle:        rgba(2, 132, 199, 0.12);
+  --color-road: #0284C7;
+  --color-road-subtle: rgba(2, 132, 199, 0.12);
+  --color-zone: #0284C7;
+  --color-zone-subtle: rgba(2, 132, 199, 0.12);
 
   /* Semantic */
-  --danger:           #DC2626;
-  --danger-hover:     #B91C1C;
-  --danger-subtle:    rgba(220, 38, 38, 0.08);
+  --danger: #DC2626;
+  --danger-hover: #B91C1C;
+  --danger-subtle: rgba(220, 38, 38, 0.08);
 
   /* Shadows */
-  --shadow-sm:  0 1px 3px rgba(0, 0, 0, 0.08);
-  --shadow-md:  0 4px 12px rgba(0, 0, 0, 0.10);
-  --shadow-lg:  0 8px 24px rgba(0, 0, 0, 0.12);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.10);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
   --shadow-glow-accent: 0 0 12px rgba(2, 132, 199, 0.25);
 }
 
@@ -172,7 +172,9 @@
    RESET & BASE
    ══════════════════════════════════════════════════════════════════════════ */
 
-*, *::before, *::after {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
@@ -578,6 +580,16 @@ button {
   margin-bottom: 10px;
   padding-bottom: 8px;
   border-bottom: 1px solid rgba(38, 58, 74, 0.6);
+  gap: 8px;
+}
+
+.hud-card-topbar > div:first-child {
+  min-width: 0;
+}
+
+.hud-card-topbar > div:last-child {
+  flex-shrink: 0;
+  min-width: 0;
 }
 
 .hud-card-layer-name {
@@ -587,6 +599,10 @@ button {
   letter-spacing: 0.08em;
   color: var(--color-text);
   text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 /* ── HUD Nav / Control elements ────────────────────────────────────────── */
@@ -636,6 +652,10 @@ button {
   padding: 1px 6px;
   border-radius: 3px;
   letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
 }
 
 /* ── Scrollable Body ───────────────────────────────────────────────────── */
@@ -671,6 +691,7 @@ button {
   padding: 12px 14px;
   position: relative;
   transition: all 0.2s ease;
+  min-width: 0;
 }
 
 .hud-card-header {
@@ -678,6 +699,11 @@ button {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 8px;
+  gap: 8px;
+}
+
+.hud-card-header > div {
+  min-width: 0;
 }
 
 .hud-card-badge-label {
@@ -687,6 +713,7 @@ button {
   letter-spacing: 0.10em;
   color: var(--color-primary);
   text-transform: uppercase;
+  flex-shrink: 0;
 }
 
 .hud-fid-pill {
@@ -698,6 +725,10 @@ button {
   padding: 2px 7px;
   border-radius: 3px;
   letter-spacing: 0.04em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 .hud-feature-title {
@@ -758,6 +789,7 @@ button {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 6px;
+  min-width: 0;
 }
 
 .hud-action-btn {
@@ -775,6 +807,14 @@ button {
   cursor: pointer;
   transition: all 0.15s ease;
   font-family: inherit;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.hud-action-btn span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .hud-action-btn:hover {
@@ -1041,6 +1081,7 @@ button {
   position: relative;
   gap: 8px;
   background-color: transparent;
+  min-width: 0;
 }
 
 .hud-layer-row:hover {
@@ -1154,6 +1195,7 @@ button {
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
 }
 
 .hud-drilldown-title {
@@ -1163,6 +1205,10 @@ button {
   color: var(--color-primary);
   font-family: var(--hud-font-mono);
   text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 /* ── INLINE FEATURE PANEL ──────────────────────────────────── */
@@ -1179,6 +1225,7 @@ button {
     opacity: 0;
     transform: translateY(-6px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -1281,6 +1328,7 @@ button {
   cursor: pointer;
   transition: background 0.1s ease;
   border-bottom: 1px solid rgba(255, 255, 255, 0.025);
+  min-width: 0;
 }
 
 .inline-feature-item:last-child {
@@ -1543,9 +1591,11 @@ button {
 .layer-row.active[data-layer="zones"] .layer-icon {
   box-shadow: 0 0 0 1.5px var(--color-zone);
 }
+
 .layer-row.active[data-layer="roads"] .layer-icon {
   box-shadow: 0 0 0 1.5px var(--color-road);
 }
+
 .layer-row.active[data-layer="streetlights"] .layer-icon {
   box-shadow: 0 0 0 1.5px var(--color-streetlight);
 }
@@ -1773,7 +1823,7 @@ button {
 .btn-danger {
   background-color: var(--danger-subtle);
   color: var(--danger);
-  border-color: rgba(239,68,68,0.25);
+  border-color: rgba(239, 68, 68, 0.25);
 }
 
 .btn-danger:hover:not(:disabled) {
@@ -2004,6 +2054,7 @@ button {
     opacity: 0;
     transform: translateX(-8px) scale(0.98);
   }
+
   to {
     opacity: 1;
     transform: translateX(0) scale(1);
@@ -2689,6 +2740,7 @@ button {
     opacity: 0;
     transform: translateY(2px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -3132,7 +3184,7 @@ button {
   max-width: 100%;
   object-fit: contain;
   display: block;
-  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.2));
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.2));
 }
 
 .hud-legend-unavailable {
@@ -3255,6 +3307,7 @@ button {
     transform: translateY(100%);
     opacity: 0;
   }
+
   to {
     transform: translateY(0);
     opacity: 1;
@@ -3838,7 +3891,9 @@ button {
 }
 
 @keyframes spinAttr {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* ── Light Theme Overrides ───────────────────────────────────────────────────── */
@@ -3930,4 +3985,3 @@ button {
   border-color: #E2E8F0;
   color: #475569;
 }
-

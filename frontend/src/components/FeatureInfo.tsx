@@ -169,8 +169,8 @@ export const FeatureInfo: React.FC<FeatureInfoProps> = ({
   return (
     <div className="hud-feature-info" data-testid="feature-info-panel">
       {/* Top Bar */}
-      <div className="hud-card-topbar">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+      <div className="hud-card-topbar" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', width: '100%' }}>
           {onClose && (
             <button
               type="button"
@@ -185,7 +185,7 @@ export const FeatureInfo: React.FC<FeatureInfoProps> = ({
           )}
           <span className="hud-card-layer-name">{layerMeta.title}</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', width: '100%', paddingLeft: onClose ? '28px' : '0' }}>
           <span className="hud-workspace-pill" title={`Source: ${layerMeta.workspace}`}>
             {layerMeta.workspace}
           </span>

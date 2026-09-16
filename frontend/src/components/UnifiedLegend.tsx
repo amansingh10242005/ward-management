@@ -22,6 +22,18 @@ export interface CoreLayerDef {
   styleName?: string;
 }
 
+export interface DynamicLayer {
+  workspace: string;
+  name: string;
+  qualifiedName: string;
+  title: string;
+  abstract?: string;
+  srs?: string;
+  nativeBoundingBox?: any;
+  latLonBoundingBox?: any;
+  defaultStyle?: string;
+}
+
 export const CORE_LAYERS_REGISTRY: CoreLayerDef[] = [
   {
     name: 'states',

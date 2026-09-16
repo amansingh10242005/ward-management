@@ -15,7 +15,7 @@
  */
 
 import { spawn } from 'child_process';
-import { pool } from '../backend/src/db/pool.js';
+import { pool } from '../../backend/src/db/pool.js';
 
 const CHROME_PATH = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const APP_URL = 'http://localhost:5173/';
@@ -25,7 +25,7 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function runCoreLayerAttributeTests() {
+export async function runCore() {
   console.log('================================================================');
   console.log('TARGETED AUDIT: ATTRIBUTE TABLE CORE-LAYER ATTRIBUTE EDITING');
   console.log('TL Requirement #6: Verify Core-Layer Attribute Editing');
@@ -48,7 +48,7 @@ async function runCoreLayerAttributeTests() {
       'about:blank'
     ]);
 
-    chromeProcess.stderr.on('data', () => {});
+    chromeProcess.stderr.on('data', () => { });
 
     let wsUrl = null;
     for (let attempt = 0; attempt < 30; attempt++) {
@@ -67,7 +67,7 @@ async function runCoreLayerAttributeTests() {
           wsUrl = newPage.webSocketDebuggerUrl;
           break;
         }
-      } catch {}
+      } catch { }
     }
 
     if (!wsUrl) throw new Error('Failed to connect to Chrome DevTools Protocol');
@@ -235,9 +235,9 @@ async function runCoreLayerAttributeTests() {
     console.log('  States Initial State:', statesInit);
 
     const targetStateId = statesInit?.rowId ? parseInt(statesInit.rowId.split('.')[1], 10) : 40;
-    const dbState0Before = await pool.query(`SELECT id, state, state_lgd FROM states WHERE id = $1`, [targetStateId]);
-    const origStateName = dbState0Before.rows[0].state;
-    const origStateLgd = dbState0Before.rows[0].state_lgd;
+    const dbState0Before = await pool.query(`SELECT id, "STATE", "State_LGD" FROM states WHERE id = $1`, [targetStateId]);
+    const origStateName = dbState0Before.rows[0].STATE;
+    const origStateLgd = dbState0Before.rows[0].State_LGD;
     const testStateName = `${origStateName} (TEST_EDIT)`;
 
     console.log(`  Database record before edit: state="${origStateName}", state_lgd=${origStateLgd}`);
@@ -267,14 +267,14 @@ async function runCoreLayerAttributeTests() {
     await waitForTableReady();
 
     // Verify network: exactly 1 PUT /api/states/:id
-    const statesPutReqs = networkRequests.slice(netCountBeforeStatesEdit).filter(r => 
+    const statesPutReqs = networkRequests.slice(netCountBeforeStatesEdit).filter(r =>
       r.method === 'PUT' && r.url.includes('/api/states')
     );
 
     // Verify DB updated
-    const dbState0After = await pool.query(`SELECT id, state, state_lgd FROM states WHERE id = $1`, [targetStateId]);
-    const stateUpdatedInDb = dbState0After.rows[0].state === testStateName;
-    const stateLgdUntouched = dbState0After.rows[0].state_lgd === origStateLgd;
+    const dbState0After = await pool.query(`SELECT id, "STATE", "State_LGD" FROM states WHERE id = $1`, [targetStateId]);
+    const stateUpdatedInDb = dbState0After.rows[0].STATE === testStateName;
+    const stateLgdUntouched = dbState0After.rows[0].State_LGD === origStateLgd;
 
     // Verify table row text
     const statesRowAfterText = await evaluate(`document.querySelector('tbody tr.attr-tr')?.textContent || ''`);
@@ -284,28 +284,28 @@ async function runCoreLayerAttributeTests() {
     const statesUndoRes = await evaluate(`window.__historyService.undo()`);
     await sleep(2500);
     await waitForTableReady();
-    const statesUndoReqs = networkRequests.slice(netCountBeforeStatesUndo).filter(r => 
+    const statesUndoReqs = networkRequests.slice(netCountBeforeStatesUndo).filter(r =>
       r.method === 'PUT' && r.url.includes('/api/states')
     );
-    const dbState0AfterUndo = await pool.query(`SELECT id, state, state_lgd FROM states WHERE id = $1`, [targetStateId]);
-    const stateRestoredInDb = dbState0AfterUndo.rows[0].state === origStateName;
+    const dbState0AfterUndo = await pool.query(`SELECT id, "STATE", "State_LGD" FROM states WHERE id = $1`, [targetStateId]);
+    const stateRestoredInDb = dbState0AfterUndo.rows[0].STATE === origStateName;
 
     // Test Redo
     const netCountBeforeStatesRedo = networkRequests.length;
     const statesRedoRes = await evaluate(`window.__historyService.redo()`);
     await sleep(2500);
     await waitForTableReady();
-    const statesRedoReqs = networkRequests.slice(netCountBeforeStatesRedo).filter(r => 
+    const statesRedoReqs = networkRequests.slice(netCountBeforeStatesRedo).filter(r =>
       r.method === 'PUT' && r.url.includes('/api/states')
     );
-    const dbState0AfterRedo = await pool.query(`SELECT id, state, state_lgd FROM states WHERE id = $1`, [targetStateId]);
-    const stateRedoneInDb = dbState0AfterRedo.rows[0].state === testStateName;
+    const dbState0AfterRedo = await pool.query(`SELECT id, "STATE", "State_LGD" FROM states WHERE id = $1`, [targetStateId]);
+    const stateRedoneInDb = dbState0AfterRedo.rows[0].STATE === testStateName;
 
     // Final Restore
     await evaluate(`window.__historyService.undo()`);
     await sleep(2000);
     await waitForTableReady();
-    const dbState0Final = await pool.query(`SELECT id, state, state_lgd FROM states WHERE id = $1`, [targetStateId]);
+    const dbState0Final = await pool.query(`SELECT id, "STATE", "State_LGD" FROM states WHERE id = $1`, [targetStateId]);
 
     console.log('  DEBUG AT.CORE.1 components:', {
       statesPutReqs: statesPutReqs.length,
@@ -324,8 +324,8 @@ async function runCoreLayerAttributeTests() {
 
     testMatrix['AT.CORE.1'] = {
       pass: statesPutReqs.length === 1 && stateUpdatedInDb && stateLgdUntouched &&
-            statesUndoRes.success && statesUndoReqs.length === 1 && stateRestoredInDb &&
-            statesRedoRes.success && statesRedoReqs.length === 1 && stateRedoneInDb && dbState0Final.rows[0].STATE === origStateName,
+        statesUndoRes.success && statesUndoReqs.length === 1 && stateRestoredInDb &&
+        statesRedoRes.success && statesRedoReqs.length === 1 && stateRedoneInDb && dbState0Final.rows[0].STATE === origStateName,
       details: `Single save count: ${statesPutReqs.length} PUT, DB updated: ${stateUpdatedInDb}, Undo success: ${stateRestoredInDb}, Redo success: ${stateRedoneInDb}, Final restored: ${dbState0Final.rows[0].STATE === origStateName}`
     };
     console.log('  Result:', testMatrix['AT.CORE.1']);
@@ -351,10 +351,10 @@ async function runCoreLayerAttributeTests() {
     console.log('  Districts Initial State:', distInit);
 
     const targetDistId = distInit?.rowId ? parseInt(distInit.rowId.split('.')[1], 10) : 0;
-    const dbDist0Before = await pool.query(`SELECT id, district, state, district_l FROM districts WHERE id = $1`, [targetDistId]);
-    const origDistName = dbDist0Before.rows[0].district;
-    const origDistState = dbDist0Before.rows[0].state;
-    const origDistLgd = dbDist0Before.rows[0].district_l;
+    const dbDist0Before = await pool.query(`SELECT id, "District", "STATE", "DISTRICT_L" FROM districts WHERE id = $1`, [targetDistId]);
+    const origDistName = dbDist0Before.rows[0].District;
+    const origDistState = dbDist0Before.rows[0].STATE;
+    const origDistLgd = dbDist0Before.rows[0].District_L;
     const testDistName = `${origDistName} (TEST_EDIT)`;
 
     console.log(`  Database record before edit: district="${origDistName}", state="${origDistState}", district_l="${origDistLgd}"`);
@@ -384,14 +384,14 @@ async function runCoreLayerAttributeTests() {
     await waitForTableReady();
 
     // Verify network: exactly 1 PUT /api/districts/:id
-    const distPutReqs = networkRequests.slice(netCountBeforeDistEdit).filter(r => 
+    const distPutReqs = networkRequests.slice(netCountBeforeDistEdit).filter(r =>
       r.method === 'PUT' && r.url.includes('/api/districts')
     );
 
     // Verify DB updated
-    const dbDist0After = await pool.query(`SELECT id, district, state, district_l FROM districts WHERE id = $1`, [targetDistId]);
-    const distUpdatedInDb = dbDist0After.rows[0].district === testDistName;
-    const distUntouchedPreserved = dbDist0After.rows[0].state === origDistState && dbDist0After.rows[0].district_l === origDistLgd;
+    const dbDist0After = await pool.query(`SELECT id, "District", "STATE", "DISTRICT_L" FROM districts WHERE id = $1`, [targetDistId]);
+    const distUpdatedInDb = dbDist0After.rows[0].District === testDistName;
+    const distUntouchedPreserved = dbDist0After.rows[0].STATE === origDistState && dbDist0After.rows[0].District_L === origDistLgd;
 
     // Verify table row text
     const distRowAfterText = await evaluate(`document.querySelector('tbody tr.attr-tr')?.textContent || ''`);
@@ -401,28 +401,28 @@ async function runCoreLayerAttributeTests() {
     const distUndoRes = await evaluate(`window.__historyService.undo()`);
     await sleep(2000);
     await waitForTableReady();
-    const distUndoReqs = networkRequests.slice(netCountBeforeDistUndo).filter(r => 
+    const distUndoReqs = networkRequests.slice(netCountBeforeDistUndo).filter(r =>
       r.method === 'PUT' && r.url.includes('/api/districts')
     );
-    const dbDist0AfterUndo = await pool.query(`SELECT id, district, state, district_l FROM districts WHERE id = $1`, [targetDistId]);
-    const distRestoredInDb = dbDist0AfterUndo.rows[0].district === origDistName;
+    const dbDist0AfterUndo = await pool.query(`SELECT id, "District", "STATE", "DISTRICT_L" FROM districts WHERE id = $1`, [targetDistId]);
+    const distRestoredInDb = dbDist0AfterUndo.rows[0].District === origDistName;
 
     // Test Redo
     const netCountBeforeDistRedo = networkRequests.length;
     const distRedoRes = await evaluate(`window.__historyService.redo()`);
     await sleep(2000);
     await waitForTableReady();
-    const distRedoReqs = networkRequests.slice(netCountBeforeDistRedo).filter(r => 
+    const distRedoReqs = networkRequests.slice(netCountBeforeDistRedo).filter(r =>
       r.method === 'PUT' && r.url.includes('/api/districts')
     );
-    const dbDist0AfterRedo = await pool.query(`SELECT id, district, state, district_l FROM districts WHERE id = $1`, [targetDistId]);
-    const distRedoneInDb = dbDist0AfterRedo.rows[0].district === testDistName;
+    const dbDist0AfterRedo = await pool.query(`SELECT id, "District", "STATE", "DISTRICT_L" FROM districts WHERE id = $1`, [targetDistId]);
+    const distRedoneInDb = dbDist0AfterRedo.rows[0].District === testDistName;
 
     // Final Restore
     await evaluate(`window.__historyService.undo()`);
     await sleep(1500);
     await waitForTableReady();
-    const dbDist0Final = await pool.query(`SELECT id, district, state, district_l FROM districts WHERE id = $1`, [targetDistId]);
+    const dbDist0Final = await pool.query(`SELECT id, "District", "STATE", "DISTRICT_L" FROM districts WHERE id = $1`, [targetDistId]);
 
     console.log('  DEBUG AT.CORE.2 components:', {
       distPutReqs: distPutReqs.length,
@@ -441,8 +441,8 @@ async function runCoreLayerAttributeTests() {
 
     testMatrix['AT.CORE.2'] = {
       pass: distPutReqs.length === 1 && distUpdatedInDb && distUntouchedPreserved &&
-            distUndoRes.success && distUndoReqs.length === 1 && distRestoredInDb &&
-            distRedoRes.success && distRedoReqs.length === 1 && distRedoneInDb && dbDist0Final.rows[0].District === origDistName,
+        distUndoRes.success && distUndoReqs.length === 1 && distRestoredInDb &&
+        distRedoRes.success && distRedoReqs.length === 1 && distRedoneInDb && dbDist0Final.rows[0].District === origDistName,
       details: `Single save count: ${distPutReqs.length} PUT, DB updated: ${distUpdatedInDb}, Undo success: ${distRestoredInDb}, Redo success: ${distRedoneInDb}, Final restored: ${dbDist0Final.rows[0].District === origDistName}`
     };
     console.log('  Result:', testMatrix['AT.CORE.2']);
@@ -505,7 +505,7 @@ async function runCoreLayerAttributeTests() {
     await waitForTableReady();
 
     // Verify network: exactly 1 PUT /api/zones/1
-    const zonePutReqs = networkRequests.slice(netCountBeforeZoneEdit).filter(r => 
+    const zonePutReqs = networkRequests.slice(netCountBeforeZoneEdit).filter(r =>
       r.method === 'PUT' && r.url.includes('/api/zones')
     );
 
@@ -522,7 +522,7 @@ async function runCoreLayerAttributeTests() {
     const zoneUndoRes = await evaluate(`window.__historyService.undo()`);
     await sleep(1500);
     await waitForTableReady();
-    const zoneUndoReqs = networkRequests.slice(netCountBeforeZoneUndo).filter(r => 
+    const zoneUndoReqs = networkRequests.slice(netCountBeforeZoneUndo).filter(r =>
       r.method === 'PUT' && r.url.includes('/api/zones')
     );
     const dbZone1AfterUndo = await pool.query(`SELECT id, name, type FROM zones WHERE id = 1`);
@@ -533,7 +533,7 @@ async function runCoreLayerAttributeTests() {
     const zoneRedoRes = await evaluate(`window.__historyService.redo()`);
     await sleep(1500);
     await waitForTableReady();
-    const zoneRedoReqs = networkRequests.slice(netCountBeforeZoneRedo).filter(r => 
+    const zoneRedoReqs = networkRequests.slice(netCountBeforeZoneRedo).filter(r =>
       r.method === 'PUT' && r.url.includes('/api/zones')
     );
     const dbZone1AfterRedo = await pool.query(`SELECT id, name, type FROM zones WHERE id = 1`);
@@ -547,8 +547,8 @@ async function runCoreLayerAttributeTests() {
 
     testMatrix['AT.CORE.3'] = {
       pass: zonePutReqs.length === 1 && zoneUpdatedInDb && zoneTypeUntouched && zoneRowAfterText.includes(testZoneName) &&
-            zoneUndoRes.success && zoneUndoReqs.length === 1 && zoneRestoredInDb &&
-            zoneRedoRes.success && zoneRedoReqs.length === 1 && zoneRedoneInDb && dbZone1Final.rows[0].name === origZoneName,
+        zoneUndoRes.success && zoneUndoReqs.length === 1 && zoneRestoredInDb &&
+        zoneRedoRes.success && zoneRedoReqs.length === 1 && zoneRedoneInDb && dbZone1Final.rows[0].name === origZoneName,
       details: `Single save count: ${zonePutReqs.length} PUT, DB updated: ${zoneUpdatedInDb}, Undo success: ${zoneRestoredInDb}, Redo success: ${zoneRedoneInDb}, Final restored: ${dbZone1Final.rows[0].name === origZoneName}`
     };
     console.log('  Result:', testMatrix['AT.CORE.3']);
@@ -602,7 +602,7 @@ async function runCoreLayerAttributeTests() {
     await sleep(1500);
 
     // Verify network: exactly 1 PUT /api/roads/1
-    const roadPutReqs = networkRequests.slice(netCountBeforeRoadEdit).filter(r => 
+    const roadPutReqs = networkRequests.slice(netCountBeforeRoadEdit).filter(r =>
       r.method === 'PUT' && r.url.includes('/api/roads')
     );
 
@@ -618,7 +618,7 @@ async function runCoreLayerAttributeTests() {
     const netCountBeforeRoadUndo = networkRequests.length;
     const roadUndoRes = await evaluate(`window.__historyService.undo()`);
     await sleep(1500);
-    const roadUndoReqs = networkRequests.slice(netCountBeforeRoadUndo).filter(r => 
+    const roadUndoReqs = networkRequests.slice(netCountBeforeRoadUndo).filter(r =>
       r.method === 'PUT' && r.url.includes('/api/roads')
     );
     const dbRoad1AfterUndo = await pool.query(`SELECT id, name, category, zone_id FROM roads WHERE id = 1`);
@@ -628,7 +628,7 @@ async function runCoreLayerAttributeTests() {
     const netCountBeforeRoadRedo = networkRequests.length;
     const roadRedoRes = await evaluate(`window.__historyService.redo()`);
     await sleep(1500);
-    const roadRedoReqs = networkRequests.slice(netCountBeforeRoadRedo).filter(r => 
+    const roadRedoReqs = networkRequests.slice(netCountBeforeRoadRedo).filter(r =>
       r.method === 'PUT' && r.url.includes('/api/roads')
     );
     const dbRoad1AfterRedo = await pool.query(`SELECT id, name, category, zone_id FROM roads WHERE id = 1`);
@@ -641,8 +641,8 @@ async function runCoreLayerAttributeTests() {
 
     testMatrix['AT.CORE.4'] = {
       pass: roadPutReqs.length === 1 && roadUpdatedInDb && roadZoneUntouched && roadRowAfterText.includes(testRoadName) &&
-            roadUndoRes.success && roadUndoReqs.length === 1 && roadRestoredInDb &&
-            roadRedoRes.success && roadRedoReqs.length === 1 && roadRedoneInDb && dbRoad1Final.rows[0].name === origRoadName,
+        roadUndoRes.success && roadUndoReqs.length === 1 && roadRestoredInDb &&
+        roadRedoRes.success && roadRedoReqs.length === 1 && roadRedoneInDb && dbRoad1Final.rows[0].name === origRoadName,
       details: `Single save count: ${roadPutReqs.length} PUT, DB updated: ${roadUpdatedInDb}, Undo success: ${roadRestoredInDb}, Redo success: ${roadRedoneInDb}, Final restored: ${dbRoad1Final.rows[0].name === origRoadName}`
     };
     console.log('  Result:', testMatrix['AT.CORE.4']);
@@ -698,16 +698,16 @@ async function runCoreLayerAttributeTests() {
     await sleep(1500);
 
     // Verify network: exactly 1 PUT /api/streetlights/1
-    const slPutReqs = networkRequests.slice(netCountBeforeSlEdit).filter(r => 
+    const slPutReqs = networkRequests.slice(netCountBeforeSlEdit).filter(r =>
       r.method === 'PUT' && r.url.includes('/api/streetlights')
     );
 
     // Verify DB updated
     const dbSl1After = await pool.query(`SELECT id, name, type, zone_id, road_id FROM streetlights WHERE id = 1`);
     const slUpdatedInDb = dbSl1After.rows[0].name === testSlName;
-    const slUntouchedPreserved = dbSl1After.rows[0].type === origSlType && 
-                                 dbSl1After.rows[0].zone_id === origSlZoneId && 
-                                 dbSl1After.rows[0].road_id === origSlRoadId;
+    const slUntouchedPreserved = dbSl1After.rows[0].type === origSlType &&
+      dbSl1After.rows[0].zone_id === origSlZoneId &&
+      dbSl1After.rows[0].road_id === origSlRoadId;
 
     // Verify table row text
     const slRowAfterText = await evaluate(`document.querySelector('[data-testid="attr-row-${slInit.rowId}"]')?.textContent || ''`);
@@ -716,7 +716,7 @@ async function runCoreLayerAttributeTests() {
     const netCountBeforeSlUndo = networkRequests.length;
     const slUndoRes = await evaluate(`window.__historyService.undo()`);
     await sleep(1500);
-    const slUndoReqs = networkRequests.slice(netCountBeforeSlUndo).filter(r => 
+    const slUndoReqs = networkRequests.slice(netCountBeforeSlUndo).filter(r =>
       r.method === 'PUT' && r.url.includes('/api/streetlights')
     );
     const dbSl1AfterUndo = await pool.query(`SELECT id, name, type, zone_id, road_id FROM streetlights WHERE id = 1`);
@@ -726,7 +726,7 @@ async function runCoreLayerAttributeTests() {
     const netCountBeforeSlRedo = networkRequests.length;
     const slRedoRes = await evaluate(`window.__historyService.redo()`);
     await sleep(1500);
-    const slRedoReqs = networkRequests.slice(netCountBeforeSlRedo).filter(r => 
+    const slRedoReqs = networkRequests.slice(netCountBeforeSlRedo).filter(r =>
       r.method === 'PUT' && r.url.includes('/api/streetlights')
     );
     const dbSl1AfterRedo = await pool.query(`SELECT id, name, type, zone_id, road_id FROM streetlights WHERE id = 1`);
@@ -739,8 +739,8 @@ async function runCoreLayerAttributeTests() {
 
     testMatrix['AT.CORE.5'] = {
       pass: slPutReqs.length === 1 && slUpdatedInDb && slUntouchedPreserved && slRowAfterText.includes(testSlName) &&
-            slUndoRes.success && slUndoReqs.length === 1 && slRestoredInDb &&
-            slRedoRes.success && slRedoReqs.length === 1 && slRedoneInDb && dbSl1Final.rows[0].name === origSlName,
+        slUndoRes.success && slUndoReqs.length === 1 && slRestoredInDb &&
+        slRedoRes.success && slRedoReqs.length === 1 && slRedoneInDb && dbSl1Final.rows[0].name === origSlName,
       details: `Single save count: ${slPutReqs.length} PUT, DB updated: ${slUpdatedInDb}, Undo success: ${slRestoredInDb}, Redo success: ${slRedoneInDb}, Final restored: ${dbSl1Final.rows[0].name === origSlName}`
     };
     console.log('  Result:', testMatrix['AT.CORE.5']);
@@ -775,7 +775,7 @@ async function runCoreLayerAttributeTests() {
     })()`);
     await sleep(1500);
 
-    const multiPutReqs = networkRequests.slice(netCountBeforeMulti).filter(r => 
+    const multiPutReqs = networkRequests.slice(netCountBeforeMulti).filter(r =>
       r.method === 'PUT' && r.url.includes('/api/zones')
     );
 
@@ -885,22 +885,22 @@ async function runCoreLayerAttributeTests() {
     console.log(`\nFINAL VERDICT: ${finalVerdict}\n`);
 
     if (failCount > 0) {
-      process.exit(1);
+      throw new Error("Test failed in runCore");
     }
   } catch (err) {
     console.error('\n[FATAL ERROR in Core Validation Suite]:', err);
-    process.exit(1);
+    throw new Error("Test failed in runCore");
   } finally {
     if (ws) {
-      try { ws.close(); } catch {}
+      try { ws.close(); } catch { }
     }
     if (chromeProcess) {
-      try { chromeProcess.kill(); } catch {}
+      try { chromeProcess.kill(); } catch { }
     }
     try {
-      await pool.end();
-    } catch {}
+      // await pool.end();
+    } catch { }
   }
 }
 
-runCoreLayerAttributeTests();
+

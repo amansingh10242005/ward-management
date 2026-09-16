@@ -36,7 +36,7 @@
  */
 
 import { spawn } from 'child_process';
-import { pool } from '../backend/src/db/pool.js';
+import { pool } from '../../backend/src/db/pool.js';
 
 const CHROME_PATH = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const APP_URL = 'http://localhost:5173/';
@@ -50,7 +50,7 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function runAttributeTableValidation() {
+export async function runAttributeTable() {
   console.log('================================================================');
   console.log('GENERIC GIS ATTRIBUTE TABLE — AUTOMATED E2E CDP VALIDATION SUITE');
   console.log('TL Requirement #6: All Edit / Specific Edit for All Layers');
@@ -978,11 +978,11 @@ async function runAttributeTableValidation() {
     console.log(`\nFINAL VERDICT: ${finalVerdict}\n`);
 
     if (failCount > 0) {
-      process.exit(1);
+      throw new Error("Test failed in runAttributeTable");
     }
   } catch (err) {
     console.error('\n[FATAL ERROR in Validation Suite]:', err);
-    process.exit(1);
+    throw new Error("Test failed in runAttributeTable");
   } finally {
     if (ws) {
       try { ws.close(); } catch {}
@@ -997,9 +997,9 @@ async function runAttributeTableValidation() {
         headers: { Authorization: GEO_AUTH }
       }).catch(() => {});
       await pool.query(`DROP TABLE IF EXISTS public.tl_attr_test_layer CASCADE;`).catch(() => {});
-      await pool.end();
+      // await pool.end();
     } catch {}
   }
 }
 
-runAttributeTableValidation();
+

@@ -113,7 +113,7 @@ All tables persist geometries in **SRID 4326** (WGS 84). All spatial queries use
 - PostgreSQL 15+ with PostGIS 3
 - GeoServer 2.25+ (configured with Jetty CORS enabled)
 - Python 3.10+ with `geopandas`, `sqlalchemy`, `shapely`, `psycopg2` (for GIS data import)
-- See [docs/geoserver-setup.md](./docs/geoserver-setup.md) for the mandatory setup checklist.
+- See [docs/TL-TECHNICAL-ASSESSMENT.md](./docs/TL-TECHNICAL-ASSESSMENT.md) for the mandatory setup checklist.
 
 ### Database Setup & Migrations
 Run all migrations in order (001 through 009):
@@ -129,7 +129,7 @@ run_migrations.bat
 To run the automated PostGIS and schema integrity check:
 ```bash
 cd backend
-node verify_phase2.js
+node verify_database_integrity.js
 ```
 
 ### Administrative GIS Data Import
@@ -147,7 +147,7 @@ python import_geopandas.py --dry-run
 
 ### Live QGIS → PostGIS Import Workflow
 For the live TL assessment demo (where unknown vector datasets must be imported and published in real-time), see the dedicated QGIS manual workflow document:
-[docs/qgis-live-demo.md](./docs/qgis-live-demo.md)
+[docs/TL-TECHNICAL-ASSESSMENT.md](./docs/TL-TECHNICAL-ASSESSMENT.md)
 
 ### Backend
 ```bash
@@ -266,4 +266,4 @@ For Phase 5, the following steps must be performed manually in the GeoServer Adm
 7. **Save**: Scroll to the bottom and click **Save**.
 8. **Verify**: Open OpenLayers (`http://localhost:5173`) and ensure the map layers render without full-table WFS requests.
 
-See [docs/geoserver-setup.md](./docs/geoserver-setup.md) for the full initial configuration checklist.
+See [docs/TL-TECHNICAL-ASSESSMENT.md](./docs/TL-TECHNICAL-ASSESSMENT.md) for the full initial configuration checklist.

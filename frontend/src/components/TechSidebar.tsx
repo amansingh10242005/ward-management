@@ -143,6 +143,7 @@ export default function TechSidebar({
     e.stopPropagation();
     const isCore = ['streetlights', 'roads', 'zones', 'states', 'districts'].includes(layerName);
     const isVisible = !(isCore ? layers[layerName] : dynamicVisibility?.[layerName]);
+    
     if (isCore) {
       if (onToggleCoreLayer) {
         onToggleCoreLayer(layerName, isVisible);
@@ -150,16 +151,46 @@ export default function TechSidebar({
         setLocalLayers((prev) => ({ ...prev, [layerName]: isVisible }));
         olService.toggleLayer(layerName as any, isVisible);
       }
-    } else if (onToggleDynamicLayer) {
-      onToggleDynamicLayer(layerName, isVisible);
+      olService.zoomToLayer(layerName);
+    } else {
+      if (onToggleDynamicLayer) {
+        onToggleDynamicLayer(layerName, isVisible);
+      }
+      const dyn = dynamicLayers?.find((d: any) => d.name === layerName);
+      if (dyn) olService.zoomToDynamicLayerExtent(dyn);
     }
   };
 
   const handleSelectLayer = (layerName: ActiveLayerType) => {
     if (activeLayer === layerName) {
       setActiveLayer(null);
-    } else {
+    } else if (layerName) {
       setActiveLayer(layerName);
+      
+      const isCore = ['streetlights', 'roads', 'zones', 'states', 'districts'].includes(layerName);
+      const isCurrentlyVisible = isCore ? layers[layerName] : dynamicVisibility?.[layerName];
+      
+      // Auto-turn on layer if it's hidden
+      if (!isCurrentlyVisible) {
+        if (isCore) {
+          if (onToggleCoreLayer) {
+            onToggleCoreLayer(layerName, true);
+          } else {
+            setLocalLayers((prev) => ({ ...prev, [layerName]: true }));
+            olService.toggleLayer(layerName as any, true);
+          }
+        } else if (onToggleDynamicLayer) {
+          onToggleDynamicLayer(layerName, true);
+        }
+      }
+
+      // Always zoom to layer extent when entering drilldown
+      if (isCore) {
+        olService.zoomToLayer(layerName);
+      } else {
+        const dyn = dynamicLayers?.find((d: any) => d.name === layerName);
+        if (dyn) olService.zoomToDynamicLayerExtent(dyn);
+      }
     }
   };
 
@@ -608,13 +639,7 @@ export default function TechSidebar({
                         key={layer.name} 
                         className={`hud-layer-row ${isVisible ? "active" : ""}`}
                         style={{ cursor: 'pointer' }}
-                        onClick={() => {
-                          if (!isVisible && onToggleDynamicLayer) {
-                            onToggleDynamicLayer(layer.name, true);
-                          }
-                          olService.zoomToDynamicLayerExtent(layer);
-                          handleSelectLayer(layer.name);
-                        }}
+                        onClick={() => handleSelectLayer(layer.name)}
                         title={`Click to zoom to ${layer.title || layer.name}`}
                       >
                         <div className="hud-grip" title="Discovered Layer"><IconNetwork /></div>
